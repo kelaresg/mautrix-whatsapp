@@ -1,0 +1,99 @@
+stages:
+- build
+- build docker
+- manifest
+
+.build: &build
+  image: golang:1-alpine
+  stage: build
+  cache:
+    paths:
+    - .cache
+  before_script:
+  - echo "@edge_community http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+  - apk add build-base olm-dev@edge_community
+  - mkdir -p .cache
+  - export GOPATH="$CI_PROJECT_DIR/.cache"
+  script:
+  - go build -o mautrix-whatsapp
+  artifacts:
+    paths:
+    - mautrix-whatsapp
+    - example-config.yaml
+
+.build-docker: &build-docker
+  image: docker:stable
+  stage: build docker
+  before_script:
+  - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+  - docker pull $CI_REGISTRY_IMAGE:latest || true
+  - docker build --pull --cache-from $CI_REGISTRY_IMAGE:latest --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-$DOCKER_ARCH . --file Dockerfile.ci
+  - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-$DOCKER_ARCH
+  - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-$DOCKER_ARCH
+
+build static:
+  image: golang:1-alpine
+  stage: build
+  tags:
+  - amd64
+  cache:
+    paths:
+    - .cache
+  before_script:
+  - mkdir -p .cache
+  - export GOPATH="$CI_PROJECT_DIR/.cache"
+  variables:
+    CGO_ENABLED: 0
+  script:
+  - GOOS=linux GOARCH=amd64 go build -o mautrix-whatsapp_linux_amd64
+  - GOOS=linux GOARCH=arm64 go build -o mautrix-whatsapp_linux_arm64
+  - GOOS=linux GOARCH=arm go build -o mautrix-whatsapp_linux_arm
+  - GOOS=linux GOARCH=386 go build -o mautrix-whatsapp_linux_386
+  artifacts:
+    paths:
+    - mautrix-whatsapp_linux_amd64
+    - mautrix-whatsapp_linux_arm64
+    - mautrix-whatsapp_linux_arm
+    - mautrix-whatsapp_linux_386
+    - example-config.yaml
+
+build amd64:
+  <<: *build
+  tags:
+  - amd64
+
+build arm64:
+  <<: *build
+  tags:
+  - arm64
+
+build docker amd64:
+  <<: *build-docker
+  tags:
+  - amd64
+  dependencies:
+  - build amd64
+  variables:
+    DOCKER_ARCH: amd64
+
+build docker arm64:
+  <<: *build-docker
+  tags:
+  - arm64
+  dependencies:
+  - build arm64
+  variables:
+    DOCKER_ARCH: arm64
+
+manifest:
+  stage: manifest
+  before_script:
+  - "mkdir -p $HOME/.docker && echo '{\"experimental\": \"enabled\"}' > $HOME/.docker/config.json"
+  - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+  - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-amd64
+  - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-arm64
+  - if [ $CI_COMMIT_BRANCH == "master" ]; then docker manifest create $CI_REGISTRY_IMAGE:latest $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-amd64 $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-arm64 && docker manifest push $CI_REGISTRY_IMAGE:latest; fi
+  - if [ $CI_COMMIT_BRANCH != "master" ]; then docker manifest create $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-amd64 $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-arm64 && docker manifest push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME; fi
+  - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-amd64 $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-arm64
