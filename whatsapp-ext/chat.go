@@ -45,10 +45,10 @@ const (
 	ChatActionAnnounce    ChatActionType = "announce"
 	ChatActionPromote     ChatActionType = "promote"
 	ChatActionDemote      ChatActionType = "demote"
-	ChatActionRemove      ChatActionType = "remove"
-	ChatActionAdd         ChatActionType = "add"
 	ChatActionIntroduce   ChatActionType = "introduce"
 	ChatActionCreate      ChatActionType = "create"
+	ChatActionRemove      ChatActionType = "remove"
+	ChatActionAdd         ChatActionType = "add"
 )
 
 type ChatUpdateData struct {
@@ -65,17 +65,25 @@ type ChatUpdateData struct {
 		Topic string `json:"desc"`
 		ID    string `json:"descId"`
 		SetAt int64  `json:"descTime"`
+		SetBy string `json:"descOwner"`
 	}
 
 	RemoveTopic struct {
 		ID string `json:"descId"`
 	}
 
+	Introduce struct {
+		CreationTime int64    `json:"creation"`
+		Admins       []string `json:"admins"`
+		SuperAdmins  []string `json:"superadmins"`
+		Regulars     []string `json:"regulars"`
+	}
+
 	Restrict bool
 
 	Announce bool
 
-	PermissionChange struct {
+	UserChange struct {
 		JIDs []string `json:"participants"`
 	}
 
@@ -116,6 +124,16 @@ func (cud *ChatUpdateData) UnmarshalJSON(data []byte) error {
 
 	var unmarshalTo interface{}
 	switch cud.Action {
+	case ChatActionIntroduce, ChatActionCreate:
+		err = json.Unmarshal(arr[2], &cud.NameChange)
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(arr[2], &cud.AddTopic)
+		if err != nil {
+			return err
+		}
+		unmarshalTo = &cud.Introduce
 	case ChatActionNameChange:
 		unmarshalTo = &cud.NameChange
 	case ChatActionAddTopic:
@@ -126,12 +144,8 @@ func (cud *ChatUpdateData) UnmarshalJSON(data []byte) error {
 		unmarshalTo = &cud.Restrict
 	case ChatActionAnnounce:
 		unmarshalTo = &cud.Announce
-	case ChatActionPromote, ChatActionDemote:
-		unmarshalTo = &cud.PermissionChange
-	case ChatActionAdd, ChatActionRemove:
-		unmarshalTo = &cud.MemberAction
-	case ChatActionCreate:
-		unmarshalTo = &cud.Create
+	case ChatActionPromote, ChatActionDemote, ChatActionRemove, ChatActionAdd:
+		unmarshalTo = &cud.UserChange
 	default:
 		return nil
 	}
@@ -140,8 +154,17 @@ func (cud *ChatUpdateData) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	cud.NameChange.SetBy = strings.Replace(cud.NameChange.SetBy, OldUserSuffix, NewUserSuffix, 1)
-	for index, jid := range cud.PermissionChange.JIDs {
-		cud.PermissionChange.JIDs[index] = strings.Replace(jid, OldUserSuffix, NewUserSuffix, 1)
+	for index, jid := range cud.UserChange.JIDs {
+		cud.UserChange.JIDs[index] = strings.Replace(jid, OldUserSuffix, NewUserSuffix, 1)
+	}
+	for index, jid := range cud.Introduce.SuperAdmins {
+		cud.Introduce.SuperAdmins[index] = strings.Replace(jid, OldUserSuffix, NewUserSuffix, 1)
+	}
+	for index, jid := range cud.Introduce.Admins {
+		cud.Introduce.Admins[index] = strings.Replace(jid, OldUserSuffix, NewUserSuffix, 1)
+	}
+	for index, jid := range cud.Introduce.Regulars {
+		cud.Introduce.Regulars[index] = strings.Replace(jid, OldUserSuffix, NewUserSuffix, 1)
 	}
 	return nil
 }

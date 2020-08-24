@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -38,11 +39,36 @@ import (
 	"maunium.net/go/mautrix-whatsapp/types"
 )
 
+var (
+	// These are static
+	Name = "mautrix-whatsapp"
+	URL  = "https://github.com/tulir/mautrix-whatsapp"
+	// This is changed when making a release
+	Version   = "0.1.3"
+	// This is filled by init()
+	WAVersion = ""
+	// These are filled at build time with the -X linker flag
+	Tag       = "unknown"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
+
+func init() {
+	if len(Tag) > 0 && Tag[0] == 'v' {
+		Tag = Tag[1:]
+	}
+	if Tag != Version && !strings.HasSuffix(Version, "+dev") {
+		Version += "+dev"
+	}
+	WAVersion = strings.FieldsFunc(Version, func(r rune) bool { return r == '-' || r == '+' })[0]
+}
+
 var configPath = flag.MakeFull("c", "config", "The path to your config file.", "config.yaml").String()
 
 //var baseConfigPath = flag.MakeFull("b", "base-config", "The path to the example config file.", "example-config.yaml").String()
 var registrationPath = flag.MakeFull("r", "registration", "The path where to save the appservice registration.", "registration.yaml").String()
 var generateRegistration = flag.MakeFull("g", "generate-registration", "Generate registration and quit.", "false").Bool()
+var version = flag.MakeFull("v", "version", "View bridge version and quit.", "false").Bool()
 var ignoreUnsupportedDatabase = flag.Make().LongKey("ignore-unsupported-database").Usage("Run even if database is too new").Default("false").Bool()
 var migrateFrom = flag.Make().LongKey("migrate-db").Usage("Source database type and URI to migrate from.").Bool()
 var wantHelp, _ = flag.MakeHelpFlag()
@@ -50,19 +76,19 @@ var wantHelp, _ = flag.MakeHelpFlag()
 func (bridge *Bridge) GenerateRegistration() {
 	reg, err := bridge.Config.NewRegistration()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to generate registration:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "Failed to generate registration:", err)
 		os.Exit(20)
 	}
 
 	err = reg.Save(*registrationPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to save registration:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "Failed to save registration:", err)
 		os.Exit(21)
 	}
 
 	err = bridge.Config.Save(*configPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to save config:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "Failed to save config:", err)
 		os.Exit(22)
 	}
 	fmt.Println("Registration generated. Add the path to the registration to your Synapse config, restart it, then start the bridge.")
@@ -83,7 +109,7 @@ func (bridge *Bridge) MigrateDatabase() {
 
 	newDB, err := database.New(bridge.Config.AppService.Database.Type, bridge.Config.AppService.Database.URI)
 	if err != nil {
-		bridge.Log.Fatalln("Failed to open new database:", err)
+		fmt.Println("Failed to open new database:", err)
 		os.Exit(32)
 	}
 	err = newDB.Init()
@@ -108,6 +134,7 @@ type Bridge struct {
 	Formatter      *Formatter
 	Relaybot       *User
 	Crypto         Crypto
+	Metrics *MetricsHandler
 
 	usersByMXID         map[id.UserID]*User
 	usersByJID          map[types.WhatsAppID]*User
@@ -145,7 +172,7 @@ func NewBridge() *Bridge {
 	var err error
 	bridge.Config, err = config.Load(*configPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to load config:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "Failed to load config:", err)
 		os.Exit(10)
 	}
 	return bridge
@@ -227,6 +254,7 @@ func (bridge *Bridge) Init() {
 	bridge.MatrixHandler = NewMatrixHandler(bridge)
 	bridge.Formatter = NewFormatter(bridge)
 	bridge.Crypto = NewCryptoHelper(bridge)
+	bridge.Metrics = NewMetricsHandler(bridge.Config.Metrics.Listen, bridge.Log.Sub("Metrics"), bridge.DB)
 }
 
 func (bridge *Bridge) Start() {
@@ -235,6 +263,8 @@ func (bridge *Bridge) Start() {
 		bridge.Log.Fatalln("Failed to initialize database:", err)
 		os.Exit(15)
 	}
+	bridge.Log.Debugln("Checking connection to homeserver")
+	bridge.ensureConnection()
 	if bridge.Crypto != nil {
 		err := bridge.Crypto.Init()
 		if err != nil {
@@ -247,8 +277,6 @@ func (bridge *Bridge) Start() {
 		bridge.Provisioning.Init()
 	}
 	bridge.LoadRelaybot()
-	bridge.Log.Debugln("Checking connection to homeserver")
-	bridge.ensureConnection()
 	bridge.Log.Debugln("Starting application service HTTP server")
 	go bridge.AS.Start()
 	bridge.Log.Debugln("Starting event processor")
@@ -258,6 +286,26 @@ func (bridge *Bridge) Start() {
 		go bridge.Crypto.Start()
 	}
 	go bridge.StartUsers()
+	if bridge.Config.Metrics.Enabled {
+		go bridge.Metrics.Start()
+	}
+
+	if bridge.Config.Bridge.ResendBridgeInfo {
+		go bridge.ResendBridgeInfo()
+	}
+}
+
+func (bridge *Bridge) ResendBridgeInfo() {
+	bridge.Config.Bridge.ResendBridgeInfo = false
+	err := bridge.Config.Save(*configPath)
+	if err != nil {
+		bridge.Log.Errorln("Failed to save config after setting resend_bridge_info to false:", err)
+	}
+	bridge.Log.Infoln("Re-sending bridge info state event to all portals")
+	for _, portal := range bridge.GetAllPortals() {
+		portal.UpdateBridgeInfo()
+	}
+	bridge.Log.Infoln("Finished re-sending bridge info state events")
 }
 
 func (bridge *Bridge) LoadRelaybot() {
@@ -325,6 +373,7 @@ func (bridge *Bridge) Stop() {
 		bridge.Crypto.Stop()
 	}
 	bridge.AS.Stop()
+	bridge.Metrics.Stop()
 	bridge.EventProcessor.Stop()
 	for _, user := range bridge.usersByJID {
 		if user.Conn == nil {
@@ -370,12 +419,21 @@ func main() {
 		"mautrix-whatsapp [-h] [-c <path>] [-r <path>] [-g] [--migrate-db <source type> <source uri>]")
 	err := flag.Parse()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		_, _ = fmt.Fprintln(os.Stderr, err)
 		flag.PrintHelp()
 		os.Exit(1)
 	} else if *wantHelp {
 		flag.PrintHelp()
 		os.Exit(0)
+	} else if *version {
+		if Tag == Version {
+			fmt.Printf("%s %s (%s)\n", Name, Tag, BuildTime)
+		} else if len(Commit) > 8 {
+			fmt.Printf("%s %s.%s (%s)\n", Name, Version, Commit[:8], BuildTime)
+		} else {
+			fmt.Printf("%s %s.unknown\n", Name, Version)
+		}
+		return
 	}
 
 	NewBridge().Main()
