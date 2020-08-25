@@ -258,74 +258,74 @@ func (handler *CommandHandler) CommandJoin(ce *CommandEvent) {
 	}
 }
 
-const cmdCreateHelp = `create - Create a group chat.`
-
-func (handler *CommandHandler) CommandCreate(ce *CommandEvent) {
-	if ce.Portal != nil {
-		ce.Reply("This is already a portal room")
-		return
-	}
-
-	members, err := ce.Bot.JoinedMembers(ce.RoomID)
-	if err != nil {
-		ce.Reply("Failed to get room members: %v", err)
-		return
-	}
-
-	var roomNameEvent event.RoomNameEventContent
-	err = ce.Bot.StateEvent(ce.RoomID, event.StateRoomName, "", &roomNameEvent)
-	if err != nil {
-		ce.Reply("Failed to get room name")
-		return
-	} else if len(roomNameEvent.Name) == 0 {
-		ce.Reply("Please set a name for the room first")
-		return
-	}
-
-	var encryptionEvent event.EncryptionEventContent
-	err = ce.Bot.StateEvent(ce.RoomID, event.StateEncryption, "", &encryptionEvent)
-	if err != nil {
-		ce.Reply("Failed to get room encryption status")
-		return
-	}
-
-	participants := []string{ce.User.JID}
-	for userID := range members.Joined {
-		jid, ok := handler.bridge.ParsePuppetMXID(userID)
-		if ok && jid != ce.User.JID {
-			participants = append(participants, jid)
-		}
-	}
-
-	resp, err := ce.User.Conn.CreateGroup(roomNameEvent.Name, participants)
-	if err != nil {
-		ce.Reply("Failed to create group: %v", err)
-		return
-	}
-	portal := handler.bridge.GetPortalByJID(database.GroupPortalKey(resp.GroupID))
-	portal.roomCreateLock.Lock()
-	defer portal.roomCreateLock.Unlock()
-	if len(portal.MXID) != 0 {
-		portal.log.Warnln("Detected race condition in room creation")
-		// TODO race condition, clean up the old room
-	}
-	portal.MXID = ce.RoomID
-	portal.Name = roomNameEvent.Name
-	portal.Encrypted = encryptionEvent.Algorithm == id.AlgorithmMegolmV1
-	if !portal.Encrypted && handler.bridge.Config.Bridge.Encryption.Default {
-		_, err = portal.MainIntent().SendStateEvent(portal.MXID, event.StateEncryption, "", &event.EncryptionEventContent{Algorithm: id.AlgorithmMegolmV1})
-		if err != nil {
-			portal.log.Warnln("Failed to enable e2be:", err)
-		}
-		portal.Encrypted = true
-	}
-
-	portal.Update()
-	portal.UpdateBridgeInfo()
-
-	ce.Reply("Successfully created WhatsApp group %s", portal.Key.JID)
-	ce.User.addPortalToCommunity(portal)
-}
+//const cmdCreateHelp = `create - Create a group chat.`
+//
+//func (handler *CommandHandler) CommandCreate(ce *CommandEvent) {
+//	if ce.Portal != nil {
+//		ce.Reply("This is already a portal room")
+//		return
+//	}
+//
+//	members, err := ce.Bot.JoinedMembers(ce.RoomID)
+//	if err != nil {
+//		ce.Reply("Failed to get room members: %v", err)
+//		return
+//	}
+//
+//	var roomNameEvent event.RoomNameEventContent
+//	err = ce.Bot.StateEvent(ce.RoomID, event.StateRoomName, "", &roomNameEvent)
+//	if err != nil {
+//		ce.Reply("Failed to get room name")
+//		return
+//	} else if len(roomNameEvent.Name) == 0 {
+//		ce.Reply("Please set a name for the room first")
+//		return
+//	}
+//
+//	var encryptionEvent event.EncryptionEventContent
+//	err = ce.Bot.StateEvent(ce.RoomID, event.StateEncryption, "", &encryptionEvent)
+//	if err != nil {
+//		ce.Reply("Failed to get room encryption status")
+//		return
+//	}
+//
+//	participants := []string{ce.User.JID}
+//	for userID := range members.Joined {
+//		jid, ok := handler.bridge.ParsePuppetMXID(userID)
+//		if ok && jid != ce.User.JID {
+//			participants = append(participants, jid)
+//		}
+//	}
+//
+//	resp, err := ce.User.Conn.CreateGroup(roomNameEvent.Name, participants)
+//	if err != nil {
+//		ce.Reply("Failed to create group: %v", err)
+//		return
+//	}
+//	portal := handler.bridge.GetPortalByJID(database.GroupPortalKey(resp.GroupID))
+//	portal.roomCreateLock.Lock()
+//	defer portal.roomCreateLock.Unlock()
+//	if len(portal.MXID) != 0 {
+//		portal.log.Warnln("Detected race condition in room creation")
+//		// TODO race condition, clean up the old room
+//	}
+//	portal.MXID = ce.RoomID
+//	portal.Name = roomNameEvent.Name
+//	portal.Encrypted = encryptionEvent.Algorithm == id.AlgorithmMegolmV1
+//	if !portal.Encrypted && handler.bridge.Config.Bridge.Encryption.Default {
+//		_, err = portal.MainIntent().SendStateEvent(portal.MXID, event.StateEncryption, "", &event.EncryptionEventContent{Algorithm: id.AlgorithmMegolmV1})
+//		if err != nil {
+//			portal.log.Warnln("Failed to enable e2be:", err)
+//		}
+//		portal.Encrypted = true
+//	}
+//
+//	portal.Update()
+//	portal.UpdateBridgeInfo()
+//
+//	ce.Reply("Successfully created WhatsApp group %s", portal.Key.JID)
+//	ce.User.addPortalToCommunity(portal)
+//}
 
 const cmdSetPowerLevelHelp = `set-pl [user ID] <power level> - Change the power level in a portal room. Only for bridge admins.`
 
@@ -630,8 +630,6 @@ func (handler *CommandHandler) CommandHelp(ce *CommandEvent) {
 		cmdPrefix + cmdOpenHelp,
 		cmdPrefix + cmdPMHelp,
 		cmdPrefix + cmdInviteLinkHelp,
-		cmdPrefix + cmdJoinHelp,
-		cmdPrefix + cmdCreateHelp,
 		cmdPrefix + cmdSetPowerLevelHelp,
 		cmdPrefix + cmdDeletePortalHelp,
 		cmdPrefix + cmdDeleteAllPortalsHelp,
@@ -1084,37 +1082,37 @@ func (handler *CommandHandler) CommandLeave(ce *CommandEvent) {
 	}
 }
 
-const cmdJoinHelp = `join <_Invitation link|code_> - Join the group via the invitation link.`
-
-func (handler *CommandHandler) CommandJoin(ce *CommandEvent) {
-	if len(ce.Args) == 0 {
-		ce.Reply("**Usage:** `join <Invitation link||code>`")
-		return
-	}
-
-	user := ce.User
-	params := strings.Split(ce.Args[0], "com/")
-
-	jid, err := user.Conn.HandleGroupJoin(params[len(params)-1])
-	if err == nil {
-		ce.Reply("Join operation completed.")
-	}
-
-	contact, ok := user.Conn.Store.Contacts[jid]
-	if !ok {
-		ce.Reply("Group JID not found in contacts. Try syncing contacts with `sync` first.")
-		return
-	}
-	handler.log.Debugln("Importing", jid, "for", user)
-	portal := user.bridge.GetPortalByJID(database.GroupPortalKey(jid))
-	if len(portal.MXID) > 0 {
-		portal.Sync(user, contact)
-		ce.Reply("Portal room synced.")
-	} else {
-		portal.Sync(user, contact)
-		ce.Reply("Portal room created.")
-	}
-}
+//const cmdJoinHelp = `join <_Invitation link|code_> - Join the group via the invitation link.`
+//
+//func (handler *CommandHandler) CommandJoin(ce *CommandEvent) {
+//	if len(ce.Args) == 0 {
+//		ce.Reply("**Usage:** `join <Invitation link||code>`")
+//		return
+//	}
+//
+//	user := ce.User
+//	params := strings.Split(ce.Args[0], "com/")
+//
+//	jid, err := user.Conn.HandleGroupJoin(params[len(params)-1])
+//	if err == nil {
+//		ce.Reply("Join operation completed.")
+//	}
+//
+//	contact, ok := user.Conn.Store.Contacts[jid]
+//	if !ok {
+//		ce.Reply("Group JID not found in contacts. Try syncing contacts with `sync` first.")
+//		return
+//	}
+//	handler.log.Debugln("Importing", jid, "for", user)
+//	portal := user.bridge.GetPortalByJID(database.GroupPortalKey(jid))
+//	if len(portal.MXID) > 0 {
+//		portal.Sync(user, contact)
+//		ce.Reply("Portal room synced.")
+//	} else {
+//		portal.Sync(user, contact)
+//		ce.Reply("Portal room created.")
+//	}
+//}
 
 const cmdCreateHelp = `create <_subject_> <_international phone number_>,... - Create a group.`
 
