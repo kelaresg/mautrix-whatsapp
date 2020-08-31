@@ -29,7 +29,7 @@ stages:
   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
   - docker pull $CI_REGISTRY_IMAGE:latest || true
-  - docker build --pull --cache-from $CI_REGISTRY_IMAGE:latest --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-$DOCKER_ARCH . --file Dockerfile.ci
+  - docker build --pull --cache-from $CI_REGISTRY_IMAGE:latest --build-arg TARGETARCH=$DOCKER_ARCH --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-$DOCKER_ARCH . --file Dockerfile.ci
   - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-$DOCKER_ARCH
   - docker rmi $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-$DOCKER_ARCH
 
@@ -76,6 +76,8 @@ build docker amd64:
   - amd64
   dependencies:
   - build amd64
+  needs:
+  - build amd64
   variables:
     DOCKER_ARCH: amd64
 
@@ -85,14 +87,21 @@ build docker arm64:
   - arm64
   dependencies:
   - build arm64
+  needs:
+  - build arm64
   variables:
     DOCKER_ARCH: arm64
 
 manifest:
   stage: manifest
+  variables:
+    GIT_STRATEGY: none
   before_script:
   - "mkdir -p $HOME/.docker && echo '{\"experimental\": \"enabled\"}' > $HOME/.docker/config.json"
   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  needs:
+  - build docker amd64
+  - build docker arm64
   script:
   - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-amd64
   - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA-arm64

@@ -28,6 +28,7 @@ type Config struct {
 	Homeserver struct {
 		Address string `yaml:"address"`
 		Domain  string `yaml:"domain"`
+		Asmux   bool   `yaml:"asmux"`
 	} `yaml:"homeserver"`
 
 	AppService struct {
@@ -61,6 +62,16 @@ type Config struct {
 		HSToken string `yaml:"hs_token"`
 	} `yaml:"appservice"`
 
+	Metrics struct {
+		Enabled bool   `yaml:"enabled"`
+		Listen  string `yaml:"listen"`
+	} `yaml:"metrics"`
+
+	WhatsApp struct {
+		DeviceName string `yaml:"device_name"`
+		ShortName  string `yaml:"short_name"`
+	} `yaml:"whatsapp"`
+
 	Bridge BridgeConfig `yaml:"bridge"`
 
 	Logging appservice.LogConfig `yaml:"logging"`
@@ -69,6 +80,8 @@ type Config struct {
 func (config *Config) setDefaults() {
 	config.AppService.Database.MaxOpenConns = 20
 	config.AppService.Database.MaxIdleConns = 2
+	config.WhatsApp.DeviceName = "Mautrix-WhatsApp bridge"
+	config.WhatsApp.ShortName = "mx-wa"
 	config.Bridge.setDefaults()
 }
 

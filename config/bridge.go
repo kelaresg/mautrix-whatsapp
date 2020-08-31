@@ -44,6 +44,8 @@ type BridgeConfig struct {
 	ReportConnectionRetry bool `yaml:"report_connection_retry"`
 	ChatListWait          int  `yaml:"chat_list_wait"`
 	PortalSyncWait        int  `yaml:"portal_sync_wait"`
+	UserMessageBuffer     int  `yaml:"user_message_buffer"`
+	PortalMessageBuffer   int  `yaml:"portal_message_buffer"`
 
 	CallNotices struct {
 		Start bool `yaml:"start"`
@@ -58,10 +60,14 @@ type BridgeConfig struct {
 	SyncChatMaxAge       uint64 `yaml:"sync_max_chat_age"`
 
 	SyncWithCustomPuppets bool   `yaml:"sync_with_custom_puppets"`
+	SyncDirectChatList    bool   `yaml:"sync_direct_chat_list"`
+	DefaultBridgeReceipts bool   `yaml:"default_bridge_receipts"`
+	DefaultBridgePresence bool   `yaml:"default_bridge_presence"`
 	LoginSharedSecret     string `yaml:"login_shared_secret"`
 
 	InviteOwnPuppetForBackfilling bool `yaml:"invite_own_puppet_for_backfilling"`
 	PrivateChatPortalMeta         bool `yaml:"private_chat_portal_meta"`
+	ResendBridgeInfo              bool `yaml:"resend_bridge_info"`
 
 	WhatsappThumbnail bool `yaml:"whatsapp_thumbnail"`
 
@@ -72,6 +78,12 @@ type BridgeConfig struct {
 	Encryption struct {
 		Allow   bool `yaml:"allow"`
 		Default bool `yaml:"default"`
+
+		KeySharing struct {
+			Allow               bool `yaml:"allow"`
+			RequireCrossSigning bool `yaml:"require_cross_signing"`
+			RequireVerification bool `yaml:"require_verification"`
+		} `yaml:"key_sharing"`
 	} `yaml:"encryption"`
 
 	Permissions PermissionConfig `yaml:"permissions"`
@@ -93,6 +105,8 @@ func (bc *BridgeConfig) setDefaults() {
 	bc.ReportConnectionRetry = true
 	bc.ChatListWait = 30
 	bc.PortalSyncWait = 600
+	bc.UserMessageBuffer = 1024
+	bc.PortalMessageBuffer = 128
 
 	bc.CallNotices.Start = true
 	bc.CallNotices.End = true
@@ -104,6 +118,8 @@ func (bc *BridgeConfig) setDefaults() {
 	bc.SyncChatMaxAge = 259200
 
 	bc.SyncWithCustomPuppets = true
+	bc.DefaultBridgePresence = true
+	bc.DefaultBridgeReceipts = true
 	bc.LoginSharedSecret = ""
 
 	bc.InviteOwnPuppetForBackfilling = true
