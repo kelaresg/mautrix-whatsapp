@@ -326,7 +326,28 @@ func (portal *Portal) getMessageIntent(user *User, info whatsapp.MessageInfo) *a
 	return portal.bridge.GetPuppetByJID(info.SenderJid).IntentFor(portal)
 }
 
-func (portal *Portal) startHandling(source *User, info whatsapp.MessageInfo) *appservice.IntentAPI {
+func (portal *Portal) handlePrivateChatFromMe(fromMe bool) func() {
+	if portal.IsPrivateChat() && fromMe {
+		var privateChatPuppet *Puppet
+		var privateChatPuppetInvited bool
+		privateChatPuppet = portal.bridge.GetPuppetByJID(portal.Key.Receiver)
+		if privateChatPuppetInvited {
+			return nil
+		}
+		privateChatPuppetInvited = true
+		_, _ = portal.MainIntent().InviteUser(portal.MXID, &mautrix.ReqInviteUser{UserID: privateChatPuppet.MXID})
+		_ = privateChatPuppet.DefaultIntent().EnsureJoined(portal.MXID)
+
+		return func() {
+			if privateChatPuppet != nil && privateChatPuppetInvited {
+				_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
+			}
+		}
+	}
+	return nil
+}
+
+func (portal *Portal) startHandling(source *User, info whatsapp.MessageInfo) (*appservice.IntentAPI, func()) {
 	// TODO these should all be trace logs
 	if portal.lastMessageTs > info.Timestamp+1 {
 		portal.log.Debugfln("Not handling %s: message is older (%d) than last bridge message (%d)", info.Id, info.Timestamp, portal.lastMessageTs)
@@ -337,9 +358,9 @@ func (portal *Portal) startHandling(source *User, info whatsapp.MessageInfo) *ap
 	} else {
 		portal.log.Debugfln("Starting handling of %s (ts: %d)", info.Id, info.Timestamp)
 		portal.lastMessageTs = info.Timestamp
-		return portal.getMessageIntent(source, info)
+		return portal.getMessageIntent(source, info), portal.handlePrivateChatFromMe(info.FromMe)
 	}
-	return nil
+	return nil, nil
 }
 
 func (portal *Portal) finishHandling(source *User, message *waProto.WebMessageInfo, mxid id.EventID) {
@@ -1306,8 +1327,12 @@ func (portal *Portal) sendMessage(intent *appservice.IntentAPI, eventType event.
 }
 
 func (portal *Portal) HandleTextMessage(source *User, message whatsapp.TextMessage) {
-	intent := portal.startHandling(source, message.Info)
+	intent, endHandlePrivateChatFromMe := portal.startHandling(source, message.Info)
+	if endHandlePrivateChatFromMe != nil {
+		defer endHandlePrivateChatFromMe()
+	}
 	if intent == nil {
+		portal.log.Debugfln("HandleTextMessage nil")
 		return
 	}
 
@@ -1329,7 +1354,10 @@ func (portal *Portal) HandleTextMessage(source *User, message whatsapp.TextMessa
 }
 
 func (portal *Portal) HandleLocationMessage(source *User, message whatsapp.LocationMessage) {
-	intent := portal.startHandling(source, message.Info)
+	intent, endHandlePrivateChatFromMe := portal.startHandling(source, message.Info)
+	if endHandlePrivateChatFromMe != nil {
+		defer endHandlePrivateChatFromMe()
+	}
 	if intent == nil {
 		return
 	}
@@ -1388,7 +1416,10 @@ func (portal *Portal) HandleLocationMessage(source *User, message whatsapp.Locat
 }
 
 func (portal *Portal) HandleContactMessage(source *User, message whatsapp.ContactMessage) {
-	intent := portal.startHandling(source, message.Info)
+	intent, endHandlePrivateChatFromMe := portal.startHandling(source, message.Info)
+	if endHandlePrivateChatFromMe != nil {
+		defer endHandlePrivateChatFromMe()
+	}
 	if intent == nil {
 		return
 	}
@@ -1539,7 +1570,10 @@ type mediaMessage struct {
 }
 
 func (portal *Portal) HandleMediaMessage(source *User, msg mediaMessage) {
-	intent := portal.startHandling(source, msg.info)
+	intent, endHandlePrivateChatFromMe := portal.startHandling(source, msg.info)
+	if endHandlePrivateChatFromMe != nil {
+		defer endHandlePrivateChatFromMe()
+	}
 	if intent == nil {
 		return
 	}

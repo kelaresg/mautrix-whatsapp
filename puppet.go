@@ -169,6 +169,9 @@ func (puppet *Puppet) IntentFor(portal *Portal) *appservice.IntentAPI {
 		portal.Key.JID == puppet.JID {
 		return puppet.DefaultIntent()
 	}
+	if portal.IsPrivateChat() && puppet.customIntent == nil{
+		return puppet.DefaultIntent()
+	}
 	return puppet.customIntent
 }
 
