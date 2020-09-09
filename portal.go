@@ -1019,10 +1019,13 @@ func (portal *Portal) CreateMatrixRoom(user *User) error {
 	}
 
 	bridgeInfoStateKey, bridgeInfo := portal.getBridgeInfo()
+	content := portal.GetBasePowerLevels()
+	// When creating a room, make user self the highest level of authority
+	content.Users[user.MXID] = 100
 	initialState := []*event.Event{{
 		Type: event.StatePowerLevels,
 		Content: event.Content{
-			Parsed: portal.GetBasePowerLevels(),
+			Parsed: content,
 		},
 	}, {
 		Type:     StateBridgeInfo,
