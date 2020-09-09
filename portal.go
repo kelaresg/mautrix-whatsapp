@@ -1438,9 +1438,18 @@ func (portal *Portal) HandleContactMessage(source *User, message whatsapp.Contac
 		return
 	}
 
+	infos := strings.Split(message.Vcard, "\n")
+	vCard := ""
+	for index, info := range infos {
+		if index > 2 && index < 5 {
+			infoArr := strings.Split(info, ":")
+			vCard += infoArr[1]+"\n"
+		}
+	}
+
 	content := &event.MessageEventContent{
-		Body:    fileName,
-		MsgType: event.MsgFile,
+		Body:    vCard,
+		MsgType: "m.contact",//event.MsgFile,
 		File:    file,
 		Info: &event.FileInfo{
 			MimeType: mimeType,
