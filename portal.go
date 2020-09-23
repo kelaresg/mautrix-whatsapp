@@ -591,6 +591,29 @@ func (portal *Portal) Sync(user *User, contact whatsapp.Contact) {
 		}
 	} else {
 		portal.ensureUserInvited(user)
+
+		//When you switch the account of the matrix client and log in to the same WhatsApp account,
+		//the current client account will enter the WhatsApp room created by the previous client account.
+		//For example: client A logs in to the WhatsApp account 888888 and synchronizes the private conversation
+		//with the WhatsApp contact Alice , Log out of client A at this time, log in to client B, and synchronize
+		//the WhatsApp account 888888. At this time, client B synchronizes a private conversation with Alice,
+		//but there is client A as a member of the conversation, this result is strange
+		// TODO
+		//   Here I set the current user's authority in the portal to the 99,
+		//   so that the current user has the authority to remove the previous user
+		rep, err := portal.MainIntent().SetPowerLevel(portal.MXID, user.MXID, 99)
+		if err != nil {
+			portal.log.Warnfln("SyncSkype: SetPowerLevel err: ", err, rep)
+		}
+
+		preUserIds,_ :=  portal.GetMatrixUsers()
+		for _,userId := range preUserIds {
+			err := portal.tryKickUser(userId, portal.MainIntent())
+			if err != nil {
+				portal.log.Errorln("Failed to try kick user:", err)
+			}
+		}
+
 	}
 
 	if portal.IsPrivateChat() {
@@ -1021,7 +1044,7 @@ func (portal *Portal) CreateMatrixRoom(user *User) error {
 	bridgeInfoStateKey, bridgeInfo := portal.getBridgeInfo()
 	content := portal.GetBasePowerLevels()
 	// When creating a room, make user self the highest level of authority
-	content.Users[user.MXID] = 100
+	content.Users[user.MXID] = 99
 	initialState := []*event.Event{{
 		Type: event.StatePowerLevels,
 		Content: event.Content{
