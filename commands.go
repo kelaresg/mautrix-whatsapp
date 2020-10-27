@@ -600,7 +600,7 @@ func (handler *CommandHandler) CommandPing(ce *CommandEvent) {
 			ce.Reply("Connection not OK: %v", err)
 		}
 	} else {
-		ce.Reply("You are logged in as @" + ce.User.Conn.Info.Pushname)
+		ce.Reply("You're logged in as @" + ce.User.Conn.Info.Pushname)
 	}
 }
 

@@ -355,7 +355,7 @@ func (user *User) Login(ce *CommandEvent) {
 			MsgType: event.MsgText,
 		}
 		if err == whatsapp.ErrAlreadyLoggedIn {
-			reply.Body = "You're already logged in"
+			reply.Body = "You're already logged in as @" + user.Conn.Info.Pushname
 		} else if err == whatsapp.ErrLoginInProgress {
 			reply.Body = "You have a login in progress already."
 		} else if err == whatsapp.ErrLoginTimedOut {
@@ -381,7 +381,7 @@ func (user *User) Login(ce *CommandEvent) {
 	user.JID = strings.Replace(user.Conn.Info.Wid, whatsappExt.OldUserSuffix, whatsappExt.NewUserSuffix, 1)
 	user.addToJIDMap()
 	user.SetSession(&session)
-	ce.Reply("Successfully logged in, synchronizing chats...")
+	ce.Reply("Successfully logged in as @" + user.Conn.Info.Pushname)
 	user.PostLogin()
 }
 
