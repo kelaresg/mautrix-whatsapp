@@ -22,10 +22,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Rhymen/go-whatsapp"
-
 	"maunium.net/go/maulogger/v2"
 
 	"maunium.net/go/mautrix"
@@ -132,7 +130,7 @@ func (handler *CommandHandler) CommandMux(ce *CommandEvent) {
 		handler.CommandLogout(ce)
 	case "toggle":
 		handler.CommandToggle(ce)
-	case "login-matrix", "sync", "list", "open", "pm", "invite-link", "invite", "kick", "leave", "join", "create":
+	case "login-matrix", "sync", "list", "open", "pm", "invite-link", "join", "create":
 		if !ce.User.HasSession() {
 			ce.Reply("You are not logged in. Use the `login` command to log into WhatsApp.")
 			return
@@ -152,12 +150,6 @@ func (handler *CommandHandler) CommandMux(ce *CommandEvent) {
 			handler.CommandOpen(ce)
 		case "pm":
 			handler.CommandPM(ce)
-		case "invite":
-			handler.CommandInvite(ce)
-		case "kick":
-			handler.CommandKick(ce)
-		case "leave":
-			handler.CommandLeave(ce)
 		case "invite-link":
 			handler.CommandInviteLink(ce)
 		case "join":
@@ -166,7 +158,7 @@ func (handler *CommandHandler) CommandMux(ce *CommandEvent) {
 			handler.CommandCreate(ce)
 		}
 	default:
-		ce.Reply("Unknown Command")
+		handler.CommandSpecialMux(ce)
 	}
 }
 
@@ -258,74 +250,74 @@ func (handler *CommandHandler) CommandJoin(ce *CommandEvent) {
 	}
 }
 
-//const cmdCreateHelp = `create - Create a group chat.`
-//
-//func (handler *CommandHandler) CommandCreate(ce *CommandEvent) {
-//	if ce.Portal != nil {
-//		ce.Reply("This is already a portal room")
-//		return
-//	}
-//
-//	members, err := ce.Bot.JoinedMembers(ce.RoomID)
-//	if err != nil {
-//		ce.Reply("Failed to get room members: %v", err)
-//		return
-//	}
-//
-//	var roomNameEvent event.RoomNameEventContent
-//	err = ce.Bot.StateEvent(ce.RoomID, event.StateRoomName, "", &roomNameEvent)
-//	if err != nil {
-//		ce.Reply("Failed to get room name")
-//		return
-//	} else if len(roomNameEvent.Name) == 0 {
-//		ce.Reply("Please set a name for the room first")
-//		return
-//	}
-//
-//	var encryptionEvent event.EncryptionEventContent
-//	err = ce.Bot.StateEvent(ce.RoomID, event.StateEncryption, "", &encryptionEvent)
-//	if err != nil {
-//		ce.Reply("Failed to get room encryption status")
-//		return
-//	}
-//
-//	participants := []string{ce.User.JID}
-//	for userID := range members.Joined {
-//		jid, ok := handler.bridge.ParsePuppetMXID(userID)
-//		if ok && jid != ce.User.JID {
-//			participants = append(participants, jid)
-//		}
-//	}
-//
-//	resp, err := ce.User.Conn.CreateGroup(roomNameEvent.Name, participants)
-//	if err != nil {
-//		ce.Reply("Failed to create group: %v", err)
-//		return
-//	}
-//	portal := handler.bridge.GetPortalByJID(database.GroupPortalKey(resp.GroupID))
-//	portal.roomCreateLock.Lock()
-//	defer portal.roomCreateLock.Unlock()
-//	if len(portal.MXID) != 0 {
-//		portal.log.Warnln("Detected race condition in room creation")
-//		// TODO race condition, clean up the old room
-//	}
-//	portal.MXID = ce.RoomID
-//	portal.Name = roomNameEvent.Name
-//	portal.Encrypted = encryptionEvent.Algorithm == id.AlgorithmMegolmV1
-//	if !portal.Encrypted && handler.bridge.Config.Bridge.Encryption.Default {
-//		_, err = portal.MainIntent().SendStateEvent(portal.MXID, event.StateEncryption, "", &event.EncryptionEventContent{Algorithm: id.AlgorithmMegolmV1})
-//		if err != nil {
-//			portal.log.Warnln("Failed to enable e2be:", err)
-//		}
-//		portal.Encrypted = true
-//	}
-//
-//	portal.Update()
-//	portal.UpdateBridgeInfo()
-//
-//	ce.Reply("Successfully created WhatsApp group %s", portal.Key.JID)
-//	ce.User.addPortalToCommunity(portal)
-//}
+const cmdCreateHelp = `create - Create a group chat.`
+
+func (handler *CommandHandler) CommandCreate(ce *CommandEvent) {
+	if ce.Portal != nil {
+		ce.Reply("This is already a portal room")
+		return
+	}
+
+	members, err := ce.Bot.JoinedMembers(ce.RoomID)
+	if err != nil {
+		ce.Reply("Failed to get room members: %v", err)
+		return
+	}
+
+	var roomNameEvent event.RoomNameEventContent
+	err = ce.Bot.StateEvent(ce.RoomID, event.StateRoomName, "", &roomNameEvent)
+	if err != nil {
+		ce.Reply("Failed to get room name")
+		return
+	} else if len(roomNameEvent.Name) == 0 {
+		ce.Reply("Please set a name for the room first")
+		return
+	}
+
+	var encryptionEvent event.EncryptionEventContent
+	err = ce.Bot.StateEvent(ce.RoomID, event.StateEncryption, "", &encryptionEvent)
+	if err != nil {
+		ce.Reply("Failed to get room encryption status")
+		return
+	}
+
+	participants := []string{ce.User.JID}
+	for userID := range members.Joined {
+		jid, ok := handler.bridge.ParsePuppetMXID(userID)
+		if ok && jid != ce.User.JID {
+			participants = append(participants, jid)
+		}
+	}
+
+	resp, err := ce.User.Conn.CreateGroup(roomNameEvent.Name, participants)
+	if err != nil {
+		ce.Reply("Failed to create group: %v", err)
+		return
+	}
+	portal := handler.bridge.GetPortalByJID(database.GroupPortalKey(resp.GroupID))
+	portal.roomCreateLock.Lock()
+	defer portal.roomCreateLock.Unlock()
+	if len(portal.MXID) != 0 {
+		portal.log.Warnln("Detected race condition in room creation")
+		// TODO race condition, clean up the old room
+	}
+	portal.MXID = ce.RoomID
+	portal.Name = roomNameEvent.Name
+	portal.Encrypted = encryptionEvent.Algorithm == id.AlgorithmMegolmV1
+	if !portal.Encrypted && handler.bridge.Config.Bridge.Encryption.Default {
+		_, err = portal.MainIntent().SendStateEvent(portal.MXID, event.StateEncryption, "", &event.EncryptionEventContent{Algorithm: id.AlgorithmMegolmV1})
+		if err != nil {
+			portal.log.Warnln("Failed to enable e2be:", err)
+		}
+		portal.Encrypted = true
+	}
+
+	portal.Update()
+	portal.UpdateBridgeInfo()
+
+	ce.Reply("Successfully created WhatsApp group %s", portal.Key.JID)
+	ce.User.addPortalToCommunity(portal)
+}
 
 const cmdSetPowerLevelHelp = `set-pl [user ID] <power level> - Change the power level in a portal room. Only for bridge admins.`
 
@@ -412,6 +404,7 @@ func (handler *CommandHandler) CommandLogout(ce *CommandEvent) {
 	// TODO this causes a foreign key violation, which should be fixed
 	//ce.User.JID = ""
 	ce.User.SetSession(nil)
+	handler.CommandSpecialLeaveAllPortals(ce)
 	ce.Reply("Logged out successfully.")
 }
 
@@ -630,15 +623,13 @@ func (handler *CommandHandler) CommandHelp(ce *CommandEvent) {
 		cmdPrefix + cmdOpenHelp,
 		cmdPrefix + cmdPMHelp,
 		cmdPrefix + cmdInviteLinkHelp,
+		cmdPrefix + cmdJoinHelp,
+		cmdPrefix + cmdCreateHelp,
 		cmdPrefix + cmdSetPowerLevelHelp,
 		cmdPrefix + cmdDeletePortalHelp,
 		cmdPrefix + cmdDeleteAllPortalsHelp,
-		cmdPrefix + cmdCreateHelp,
-		cmdPrefix + cmdInviteHelp,
-		cmdPrefix + cmdKickHelp,
-		cmdPrefix + cmdLeaveHelp,
-		cmdPrefix + cmdJoinHelp,
 	}, "\n* "))
+	handler.CommandSpecialHelp(ce)
 }
 
 const cmdSyncHelp = `sync [--create-all] - Synchronize contacts from phone and optionally create portals for group chats.`
@@ -933,210 +924,4 @@ func (handler *CommandHandler) CommandLogoutMatrix(ce *CommandEvent) {
 		return
 	}
 	ce.Reply("Successfully removed custom puppet")
-}
-
-const cmdInviteHelp = `invite <_group JID_> <_international phone number_>,... - Invite members to a group.`
-
-func (handler *CommandHandler) CommandInvite(ce *CommandEvent) {
-	if len(ce.Args) < 2 {
-		ce.Reply("**Usage:** `invite <group JID> <international phone number>,...`")
-		return
-	}
-
-	user := ce.User
-	jid := ce.Args[0]
-	userNumbers := strings.Split(ce.Args[1], ",")
-
-	if strings.HasSuffix(jid, whatsappExt.NewUserSuffix) {
-		ce.Reply("**Usage:** `invite <group JID> <international phone number>,...`")
-		return
-	}
-
-	for i, number := range userNumbers {
-		userNumbers[i] = number + whatsappExt.NewUserSuffix
-	}
-
-	contact, ok := user.Conn.Store.Contacts[jid]
-	if !ok {
-		ce.Reply("Group JID not found in contacts. Try syncing contacts with `sync` first.")
-		return
-	}
-	handler.log.Debugln("Importing", jid, "for", user)
-	portal := user.bridge.GetPortalByJID(database.GroupPortalKey(jid))
-	if len(portal.MXID) > 0 {
-		portal.Sync(user, contact)
-		ce.Reply("Portal room synced.")
-	} else {
-		portal.Sync(user, contact)
-		ce.Reply("Portal room created.")
-	}
-
-	handler.log.Debugln("Inviting", userNumbers, "to", jid)
-	err := user.Conn.HandleGroupInvite(jid, userNumbers)
-	if err != nil {
-		ce.Reply("Please confirm that you have permission to invite members.")
-	} else {
-		ce.Reply("Group invitation sent.\nIf the member fails to join the group, please check your permissions or command parameters")
-	}
-	time.Sleep(time.Duration(3)*time.Second)
-	ce.Reply("Syncing room puppet...")
-	chatMap := make(map[string]whatsapp.Chat)
-	for _, chat := range user.Conn.Store.Chats {
-		if chat.Jid == jid {
-			chatMap[chat.Jid]= chat
-		}
-	}
-	user.syncPortals(chatMap, false)
-	ce.Reply("Syncing room puppet completed")
-}
-
-const cmdKickHelp = `kick <_group JID_> <_international phone number_>,... <_reason_> - Remove members from the group.`
-
-func (handler *CommandHandler) CommandKick(ce *CommandEvent) {
-	if len(ce.Args) < 2 {
-		ce.Reply("**Usage:** `kick <group JID> <international phone number>,... reason`")
-		return
-	}
-
-	user := ce.User
-	jid := ce.Args[0]
-	userNumbers := strings.Split(ce.Args[1], ",")
-	reason := "omitempty"
-	if len(ce.Args) > 2 {
-		reason = ce.Args[0]
-	}
-
-	if strings.HasSuffix(jid, whatsappExt.NewUserSuffix) {
-		ce.Reply("**Usage:** `kick <group JID> <international phone number>,... reason`")
-		return
-	}
-
-	contact, ok := user.Conn.Store.Contacts[jid]
-	if !ok {
-		ce.Reply("Group JID not found in contacts. Try syncing contacts with `sync` first.")
-		return
-	}
-	handler.log.Debugln("Importing", jid, "for", user)
-	portal := user.bridge.GetPortalByJID(database.GroupPortalKey(jid))
-	if len(portal.MXID) > 0 {
-		portal.Sync(user, contact)
-		ce.Reply("Portal room synced.")
-	} else {
-		portal.Sync(user, contact)
-		ce.Reply("Portal room created.")
-	}
-
-	for i, number := range userNumbers {
-		userNumbers[i] = number + whatsappExt.NewUserSuffix
-		member := portal.bridge.GetPuppetByJID(number + whatsappExt.NewUserSuffix)
-		if member == nil {
-			portal.log.Errorln("%s is not a puppet", number)
-			return
-		}
-		_, err := portal.MainIntent().KickUser(portal.MXID, &mautrix.ReqKickUser{
-			Reason: reason,
-			UserID: member.MXID,
-		})
-		if err != nil {
-			portal.log.Errorln("Error kicking user while command kick:", err)
-		}
-	}
-
-	handler.log.Debugln("Kicking", userNumbers, "to", jid)
-	err := user.Conn.HandleGroupKick(jid, userNumbers)
-	if err != nil {
-		ce.Reply("Please confirm that you have permission to kick members.")
-	} else {
-		ce.Reply("Remove operation completed.\nIf the member has not been removed, please check your permissions or command parameters")
-	}
-}
-
-const cmdLeaveHelp = `leave <_group JID_> - leave a group.`
-
-func (handler *CommandHandler) CommandLeave(ce *CommandEvent) {
-	if len(ce.Args) == 0 {
-		ce.Reply("**Usage:** `leave <group JID>`")
-		return
-	}
-
-	user := ce.User
-	jid := ce.Args[0]
-
-	if strings.HasSuffix(jid, whatsappExt.NewUserSuffix) {
-		ce.Reply("**Usage:** `leave <group JID>`")
-		return
-	}
-
-	err := user.Conn.HandleGroupLeave(jid)
-	if err == nil {
-		ce.Reply("Leave operation completed.")
-	}
-
-	handler.log.Debugln("Importing", jid, "for", user)
-	portal := user.bridge.GetPortalByJID(database.GroupPortalKey(jid))
-	if len(portal.MXID) > 0 {
-		_, errLeave := portal.MainIntent().LeaveRoom(portal.MXID)
-		if errLeave != nil {
-			portal.log.Errorln("Error leaving matrix room:", err)
-		}
-	}
-}
-
-//const cmdJoinHelp = `join <_Invitation link|code_> - Join the group via the invitation link.`
-//
-//func (handler *CommandHandler) CommandJoin(ce *CommandEvent) {
-//	if len(ce.Args) == 0 {
-//		ce.Reply("**Usage:** `join <Invitation link||code>`")
-//		return
-//	}
-//
-//	user := ce.User
-//	params := strings.Split(ce.Args[0], "com/")
-//
-//	jid, err := user.Conn.HandleGroupJoin(params[len(params)-1])
-//	if err == nil {
-//		ce.Reply("Join operation completed.")
-//	}
-//
-//	contact, ok := user.Conn.Store.Contacts[jid]
-//	if !ok {
-//		ce.Reply("Group JID not found in contacts. Try syncing contacts with `sync` first.")
-//		return
-//	}
-//	handler.log.Debugln("Importing", jid, "for", user)
-//	portal := user.bridge.GetPortalByJID(database.GroupPortalKey(jid))
-//	if len(portal.MXID) > 0 {
-//		portal.Sync(user, contact)
-//		ce.Reply("Portal room synced.")
-//	} else {
-//		portal.Sync(user, contact)
-//		ce.Reply("Portal room created.")
-//	}
-//}
-
-const cmdCreateHelp = `create <_subject_> <_international phone number_>,... - Create a group.`
-
-func (handler *CommandHandler) CommandCreate(ce *CommandEvent) {
-	if len(ce.Args) < 2 {
-		ce.Reply("**Usage:** `create <subject> <international phone number>,...`")
-		return
-	}
-
-	user := ce.User
-	subject := ce.Args[0]
-	userNumbers := strings.Split(ce.Args[1], ",")
-
-	for i, number := range userNumbers {
-		userNumbers[i] = number + whatsappExt.NewUserSuffix
-	}
-
-	handler.log.Debugln("Create Group", subject, "with", userNumbers)
-	err := user.Conn.HandleGroupCreate(subject, userNumbers)
-	if err != nil {
-		ce.Reply("Please confirm that parameters is correct.")
-	} else {
-		ce.Reply("Syncing group list...")
-		time.Sleep(time.Duration(3)*time.Second)
-		ce.Reply("Syncing group list completed")
-	}
 }
