@@ -340,7 +340,9 @@ func (portal *Portal) handlePrivateChatFromMe(fromMe bool) func() {
 
 		return func() {
 			if privateChatPuppet != nil && privateChatPuppetInvited {
-				_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
+				// If you want to make your puppet leave the room after each bridge message
+				// in the direct message room, uncomment this line of code
+				//_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
 			}
 		}
 	}
@@ -824,7 +826,9 @@ func (portal *Portal) beginBackfill() func() {
 		portal.privateChatBackfillInvitePuppet = nil
 		portal.backfillLock.Unlock()
 		if privateChatPuppet != nil && privateChatPuppetInvited {
-			_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
+			// If you want to make your puppet leave the room after each bridge message
+			// in the direct message room, uncomment this line of code
+			//_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
 		}
 	}
 }
