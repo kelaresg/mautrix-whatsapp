@@ -154,7 +154,7 @@ func (mx *MatrixHandler) handlePrivatePortal(roomID id.RoomID, inviter *User, pu
 		return
 	}
 	intent := puppet.DefaultIntent()
-	_, _ = intent.SendNotice(roomID, "You already have a private chat portal with me at %s")
+	_, _ = intent.SendNotice(roomID, fmt.Sprintf("You already have a private chat portal with me at %s", roomID))
 	mx.log.Debugln("Leaving private chat room", roomID, "as", puppet.MXID, "after accepting invite from", inviter.MXID, "as we already have chat with the user")
 	_, _ = intent.LeaveRoom(roomID)
 }
