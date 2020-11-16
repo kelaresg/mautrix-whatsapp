@@ -996,13 +996,38 @@ func (user *User) HandleCommand(cmd whatsappExt.Command) {
 		}
 	case whatsappExt.CommandDisconnect:
 		user.cleanDisconnection = true
+		Reason := "Your WhatsApp connection was closed by the server because you opened another WhatsApp Web client."
 		if cmd.Kind == "replaced" {
 			go user.sendMarkdownBridgeAlert("\u26a0 Your WhatsApp connection was closed by the server because you opened another WhatsApp Web client.\n\n" +
 				"Use the `reconnect` command to disconnect the other client and resume bridging.")
 		} else {
+			Reason = "closed by the server"
 			user.log.Warnln("Unknown kind of disconnect:", string(cmd.Raw))
 			go user.sendMarkdownBridgeAlert("\u26a0 Your WhatsApp connection was closed by the server (reason code: %s).\n\n"+
 				"Use the `reconnect` command to reconnect.", cmd.Kind)
+		}
+
+		portals := user.GetPortals()
+		leave := func(portal *Portal) {
+			if len(portal.MXID) > 0 {
+				_, _ = portal.MainIntent().KickUser(portal.MXID, &mautrix.ReqKickUser{
+					Reason: Reason,
+					UserID: user.MXID,
+				})
+			}
+		}
+		customPuppet := user.bridge.GetPuppetByCustomMXID(user.MXID)
+		if customPuppet != nil && customPuppet.CustomIntent() != nil {
+			intent := customPuppet.CustomIntent()
+			leave = func(portal *Portal) {
+				if len(portal.MXID) > 0 {
+					_, _ = intent.LeaveRoom(portal.MXID)
+					_, _ = intent.ForgetRoom(portal.MXID)
+				}
+			}
+		}
+		for _, portal := range portals {
+			leave(portal)
 		}
 	}
 }

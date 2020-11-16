@@ -382,7 +382,7 @@ func (portal *Portal) SyncParticipants(metadata *whatsappExt.GroupInfo) {
 	for _, participant := range metadata.Participants {
 		participantMap[participant.JID] = true
 		user := portal.bridge.GetUserByJID(participant.JID)
-		portal.userMXIDAction(user, portal.ensureMXIDInvited)
+		//portal.userMXIDAction(user, portal.ensureMXIDInvited)
 
 		puppet := portal.bridge.GetPuppetByJID(participant.JID)
 		err := puppet.IntentFor(portal).EnsureJoined(portal.MXID)
@@ -608,13 +608,13 @@ func (portal *Portal) Sync(user *User, contact whatsapp.Contact) {
 			portal.log.Warnfln("SyncSkype: SetPowerLevel err: ", err, rep)
 		}
 
-		preUserIds,_ :=  portal.GetMatrixUsers()
-		for _,userId := range preUserIds {
-			err := portal.tryKickUser(userId, portal.MainIntent())
-			if err != nil {
-				portal.log.Errorln("Failed to try kick user:", err)
-			}
-		}
+		//preUserIds,_ :=  portal.GetMatrixUsers()
+		//for _,userId := range preUserIds {
+		//	err := portal.tryKickUser(userId, portal.MainIntent())
+		//	if err != nil {
+		//		portal.log.Errorln("Failed to try kick user:", err)
+		//	}
+		//}
 
 	}
 
