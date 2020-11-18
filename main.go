@@ -44,7 +44,7 @@ var (
 	Name = "mautrix-whatsapp"
 	URL  = "https://github.com/tulir/mautrix-whatsapp"
 	// This is changed when making a release
-	Version   = "0.1.3"
+	Version = "0.1.4"
 	// This is filled by init()
 	WAVersion = ""
 	// These are filled at build time with the -X linker flag
@@ -134,7 +134,7 @@ type Bridge struct {
 	Formatter      *Formatter
 	Relaybot       *User
 	Crypto         Crypto
-	Metrics *MetricsHandler
+	Metrics        *MetricsHandler
 
 	usersByMXID         map[id.UserID]*User
 	usersByJID          map[types.WhatsAppID]*User
@@ -153,6 +153,8 @@ type Crypto interface {
 	HandleMemberEvent(*event.Event)
 	Decrypt(*event.Event) (*event.Event, error)
 	Encrypt(id.RoomID, event.Type, event.Content) (*event.EncryptedEventContent, error)
+	WaitForSession(id.RoomID, id.SenderKey, id.SessionID, time.Duration) bool
+	ResetSession(id.RoomID)
 	Init() error
 	Start()
 	Stop()
@@ -220,10 +222,10 @@ func (bridge *Bridge) Init() {
 	}
 	bridge.AS.Log = log.Sub("Matrix")
 
-	bridge.Log.Debugln("Initializing database")
+	bridge.Log.Debugln("Initializing database connection")
 	bridge.DB, err = database.New(bridge.Config.AppService.Database.Type, bridge.Config.AppService.Database.URI)
-	if err != nil && (err != upgrades.UnsupportedDatabaseVersion || !*ignoreUnsupportedDatabase) {
-		bridge.Log.Fatalln("Failed to initialize database:", err)
+	if err != nil {
+		bridge.Log.Fatalln("Failed to initialize database connection:", err)
 		os.Exit(14)
 	}
 
@@ -258,8 +260,9 @@ func (bridge *Bridge) Init() {
 }
 
 func (bridge *Bridge) Start() {
+	bridge.Log.Debugln("Running database upgrades")
 	err := bridge.DB.Init()
-	if err != nil {
+	if err != nil && (err != upgrades.UnsupportedDatabaseVersion || !*ignoreUnsupportedDatabase) {
 		bridge.Log.Fatalln("Failed to initialize database:", err)
 		os.Exit(15)
 	}

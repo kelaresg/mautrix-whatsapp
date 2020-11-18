@@ -17,12 +17,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"maunium.net/go/maulogger/v2"
-	"maunium.net/go/mautrix"
 
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/format"
@@ -330,6 +332,8 @@ func (mx *MatrixHandler) shouldIgnoreEvent(evt *event.Event) bool {
 	return false
 }
 
+const sessionWaitTimeout = 5 * time.Second
+
 func (mx *MatrixHandler) HandleEncrypted(evt *event.Event) {
 	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
 	if mx.shouldIgnoreEvent(evt) || mx.bridge.Crypto == nil {
@@ -337,11 +341,67 @@ func (mx *MatrixHandler) HandleEncrypted(evt *event.Event) {
 	}
 
 	decrypted, err := mx.bridge.Crypto.Decrypt(evt)
+	if errors.Is(err, NoSessionFound) {
+		content := evt.Content.AsEncrypted()
+		mx.log.Debugfln("Couldn't find session %s trying to decrypt %s, waiting %d seconds...", content.SessionID, evt.ID, int(sessionWaitTimeout.Seconds()))
+		if mx.bridge.Crypto.WaitForSession(evt.RoomID, content.SenderKey, content.SessionID, sessionWaitTimeout) {
+			mx.log.Debugfln("Got session %s after waiting, trying to decrypt %s again", content.SessionID, evt.ID)
+			decrypted, err = mx.bridge.Crypto.Decrypt(evt)
+		} else {
+			go mx.waitLongerForSession(evt)
+			return
+		}
+	}
 	if err != nil {
 		mx.log.Warnfln("Failed to decrypt %s: %v", evt.ID, err)
+		_, _ = mx.bridge.Bot.SendNotice(evt.RoomID, fmt.Sprintf(
+			"\u26a0 Your message was not bridged: %v", err))
 		return
 	}
 	mx.bridge.EventProcessor.Dispatch(decrypted)
+}
+
+func (mx *MatrixHandler) waitLongerForSession(evt *event.Event) {
+	const extendedTimeout = sessionWaitTimeout * 2
+
+	content := evt.Content.AsEncrypted()
+	mx.log.Debugfln("Couldn't find session %s trying to decrypt %s, waiting %d more seconds...",
+		content.SessionID, evt.ID, int(extendedTimeout.Seconds()))
+
+	resp, err := mx.bridge.Bot.SendNotice(evt.RoomID, fmt.Sprintf(
+		"\u26a0 Your message was not bridged: the bridge hasn't received the decryption keys. "+
+			"The bridge will retry for %d seconds. If this error keeps happening, try restarting your client.",
+		int(extendedTimeout.Seconds())))
+	if err != nil {
+		mx.log.Errorfln("Failed to send decryption error to %s: %v", evt.RoomID, err)
+	}
+	update := event.MessageEventContent{MsgType: event.MsgNotice}
+
+	if mx.bridge.Crypto.WaitForSession(evt.RoomID, content.SenderKey, content.SessionID, extendedTimeout) {
+		mx.log.Debugfln("Got session %s after waiting more, trying to decrypt %s again", content.SessionID, evt.ID)
+		decrypted, err := mx.bridge.Crypto.Decrypt(evt)
+		if err == nil {
+			mx.bridge.EventProcessor.Dispatch(decrypted)
+			_, _ = mx.bridge.Bot.RedactEvent(evt.RoomID, resp.EventID)
+			return
+		}
+		mx.log.Warnfln("Failed to decrypt %s: %v", err)
+		update.Body = fmt.Sprintf("\u26a0 Your message was not bridged: %v", err)
+	} else {
+		mx.log.Debugfln("Didn't get %s, giving up on %s", content.SessionID, evt.ID)
+		update.Body = "\u26a0 Your message was not bridged: the bridge hasn't received the decryption keys. " +
+			"If this keeps happening, try restarting your client."
+	}
+
+	newContent := update
+	update.NewContent = &newContent
+	if resp != nil {
+		update.RelatesTo = &event.RelatesTo{
+			Type:    event.RelReplace,
+			EventID: resp.EventID,
+		}
+	}
+	_, _ = mx.bridge.Bot.SendMessageEvent(evt.RoomID, event.EventMessage, &update)
 }
 
 func (mx *MatrixHandler) HandleMessage(evt *event.Event) {

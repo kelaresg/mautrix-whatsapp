@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"image"
@@ -39,7 +40,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	log "maunium.net/go/maulogger/v2"
 
 	"maunium.net/go/mautrix/crypto/attachment"
@@ -133,7 +133,8 @@ func (bridge *Bridge) NewManualPortal(key database.PortalKey) *Portal {
 
 		recentlyHandled: [recentlyHandledLength]types.WhatsAppMessageID{},
 
-		messages: make(chan PortalMessage, bridge.Config.Bridge.PortalMessageBuffer),
+		messages:      make(chan PortalMessage, bridge.Config.Bridge.PortalMessageBuffer),
+		backfillStart: make(chan struct{}, 1),
 	}
 	portal.Key = key
 	go portal.handleMessageLoop()
@@ -148,7 +149,8 @@ func (bridge *Bridge) NewPortal(dbPortal *database.Portal) *Portal {
 
 		recentlyHandled: [recentlyHandledLength]types.WhatsAppMessageID{},
 
-		messages: make(chan PortalMessage, bridge.Config.Bridge.PortalMessageBuffer),
+		messages:      make(chan PortalMessage, bridge.Config.Bridge.PortalMessageBuffer),
+		backfillStart: make(chan struct{}, 1),
 	}
 	go portal.handleMessageLoop()
 	return portal
@@ -175,7 +177,8 @@ type Portal struct {
 	recentlyHandledLock  sync.Mutex
 	recentlyHandledIndex uint8
 
-	backfillLock  sync.Mutex
+	backfillStart chan struct{}
+	backfillWait  sync.WaitGroup
 	backfilling   bool
 	lastMessageTs uint64
 
@@ -190,23 +193,32 @@ type Portal struct {
 const MaxMessageAgeToCreatePortal = 5 * 60 // 5 minutes
 
 func (portal *Portal) handleMessageLoop() {
-	for msg := range portal.messages {
-		if len(portal.MXID) == 0 {
-			if msg.timestamp+MaxMessageAgeToCreatePortal < uint64(time.Now().Unix()) {
-				portal.log.Debugln("Not creating portal room for incoming message as the message is too old.")
-				continue
-			}
-			portal.log.Debugln("Creating Matrix room from incoming message")
-			err := portal.CreateMatrixRoom(msg.source)
-			if err != nil {
-				portal.log.Errorln("Failed to create portal room:", err)
-				return
-			}
+	for {
+		select {
+		case msg := <-portal.messages:
+			portal.handleNewMessage(msg)
+		case <-portal.backfillStart:
+			portal.log.Debugln("Processing of incoming messages is locked for backfilling")
+			portal.backfillWait.Wait()
+			portal.log.Debugln("Processing of incoming messages unlocked after backfilling")
 		}
-		portal.backfillLock.Lock()
-		portal.handleMessage(msg)
-		portal.backfillLock.Unlock()
 	}
+}
+
+func (portal *Portal) handleNewMessage(msg PortalMessage) {
+	if len(portal.MXID) == 0 {
+		if msg.timestamp+MaxMessageAgeToCreatePortal < uint64(time.Now().Unix()) {
+			portal.log.Debugln("Not creating portal room for incoming message as the message is too old.")
+			return
+		}
+		portal.log.Debugln("Creating Matrix room from incoming message")
+		err := portal.CreateMatrixRoom(msg.source)
+		if err != nil {
+			portal.log.Errorln("Failed to create portal room:", err)
+			return
+		}
+	}
+	portal.handleMessage(msg)
 }
 
 func (portal *Portal) handleMessage(msg PortalMessage) {
@@ -241,10 +253,14 @@ func (portal *Portal) handleMessage(msg PortalMessage) {
 			length: data.Length,
 		})
 	case whatsapp.DocumentMessage:
+		fileName := data.FileName
+		if len(fileName) == 0 {
+			fileName = data.Title
+		}
 		portal.HandleMediaMessage(msg.source, mediaMessage{
 			base:      base{data.Download, data.Info, data.ContextInfo, data.Type},
 			thumbnail: data.Thumbnail,
-			fileName:  data.Title,
+			fileName:  fileName,
 		})
 	case whatsapp.ContactMessage:
 		portal.HandleContactMessage(msg.source, data)
@@ -358,9 +374,14 @@ func (portal *Portal) startHandling(source *User, info whatsapp.MessageInfo) (*a
 	} else if portal.isDuplicate(info.Id) {
 		portal.log.Debugfln("Not handling %s: message is duplicate", info.Id)
 	} else {
-		portal.log.Debugfln("Starting handling of %s (ts: %d)", info.Id, info.Timestamp)
 		portal.lastMessageTs = info.Timestamp
-		return portal.getMessageIntent(source, info), portal.handlePrivateChatFromMe(info.FromMe)
+		intent := portal.getMessageIntent(source, info)
+		if intent != nil {
+			portal.log.Debugfln("Starting handling of %s (ts: %d)", info.Id, info.Timestamp)
+		} else {
+			portal.log.Debugfln("Not handling %s: sender is not known")
+		}
+		return intent, portal.handlePrivateChatFromMe(info.FromMe)
 	}
 	return nil, nil
 }
@@ -541,6 +562,9 @@ func (portal *Portal) UpdateMetadata(user *User) bool {
 	update := false
 	update = portal.UpdateName(metadata.Name, metadata.NameSetBy, false) || update
 	update = portal.UpdateTopic(metadata.Topic, metadata.TopicSetBy, false) || update
+
+	portal.RestrictMessageSending(metadata.Announce)
+
 	return update
 }
 
@@ -730,11 +754,17 @@ func (portal *Portal) RestrictMessageSending(restrict bool) {
 	if err != nil {
 		levels = portal.GetBasePowerLevels()
 	}
+
+	newLevel := 0
 	if restrict {
-		levels.EventsDefault = 50
-	} else {
-		levels.EventsDefault = 0
+		newLevel = 50
 	}
+
+	if levels.EventsDefault == newLevel {
+		return
+	}
+
+	levels.EventsDefault = newLevel
 	_, err = portal.MainIntent().SetPowerLevels(portal.MXID, levels)
 	if err != nil {
 		portal.log.Errorln("Failed to change power levels:", err)
@@ -806,7 +836,11 @@ func (portal *Portal) BackfillHistory(user *User, lastMessageTime uint64) error 
 }
 
 func (portal *Portal) beginBackfill() func() {
-	portal.backfillLock.Lock()
+	portal.backfillWait.Add(1)
+	select {
+	case portal.backfillStart <- struct{}{}:
+	default:
+	}
 	portal.backfilling = true
 	var privateChatPuppetInvited bool
 	var privateChatPuppet *Puppet
@@ -824,7 +858,7 @@ func (portal *Portal) beginBackfill() func() {
 	return func() {
 		portal.backfilling = false
 		portal.privateChatBackfillInvitePuppet = nil
-		portal.backfillLock.Unlock()
+		portal.backfillWait.Done()
 		if privateChatPuppet != nil && privateChatPuppetInvited {
 			// If you want to make your puppet leave the room after each bridge message
 			// in the direct message room, uncomment this line of code
@@ -1048,7 +1082,8 @@ func (portal *Portal) CreateMatrixRoom(user *User) error {
 	bridgeInfoStateKey, bridgeInfo := portal.getBridgeInfo()
 	content := portal.GetBasePowerLevels()
 	// When creating a room, make user self the highest level of authority
-	content.Users[user.MXID] = 99
+	content.Users[user.MXID] = 95
+
 	initialState := []*event.Event{{
 		Type: event.StatePowerLevels,
 		Content: event.Content{
@@ -1116,6 +1151,9 @@ func (portal *Portal) CreateMatrixRoom(user *User) error {
 
 	if metadata != nil {
 		portal.SyncParticipants(metadata)
+		if metadata.Announce {
+			portal.RestrictMessageSending(metadata.Announce)
+		}
 	} else {
 		customPuppet := portal.bridge.GetPuppetByCustomMXID(user.MXID)
 		if customPuppet != nil && customPuppet.CustomIntent() != nil {
@@ -1224,7 +1262,7 @@ func (portal *Portal) HandleMessageRevoke(user *User, message whatsappExt.Messag
 	msg.Delete()
 }
 
-func (portal *Portal) HandleFakeMessage(source *User, message FakeMessage) {
+func (portal *Portal) HandleFakeMessage(_ *User, message FakeMessage) {
 	if portal.isRecentlyHandled(message.ID) {
 		return
 	}
@@ -1334,7 +1372,35 @@ func (portal *Portal) sendMainIntentMessage(content interface{}) (*mautrix.RespS
 	return portal.sendMessage(portal.MainIntent(), event.EventMessage, content, 0)
 }
 
+const MessageSendRetries = 5
+const MediaUploadRetries = 5
+const BadGatewaySleep = 5 * time.Second
+
 func (portal *Portal) sendMessage(intent *appservice.IntentAPI, eventType event.Type, content interface{}, timestamp int64) (*mautrix.RespSendEvent, error) {
+	return portal.sendMessageWithRetry(intent, eventType, content, timestamp, MessageSendRetries)
+}
+
+func isGatewayError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var httpErr mautrix.HTTPError
+	return errors.As(err, &httpErr) && (httpErr.IsStatus(http.StatusBadGateway) || httpErr.IsStatus(http.StatusGatewayTimeout))
+}
+
+func (portal *Portal) sendMessageWithRetry(intent *appservice.IntentAPI, eventType event.Type, content interface{}, timestamp int64, retries int) (*mautrix.RespSendEvent, error) {
+	for ;;retries-- {
+		resp, err := portal.sendMessageDirect(intent, eventType, content, timestamp)
+		if retries > 0 && isGatewayError(err) {
+			portal.log.Warnfln("Got gateway error trying to send message, retrying in %d seconds", int(BadGatewaySleep.Seconds()))
+			time.Sleep(BadGatewaySleep)
+		} else {
+			return resp, err
+		}
+	}
+}
+
+func (portal *Portal) sendMessageDirect(intent *appservice.IntentAPI, eventType event.Type, content interface{}, timestamp int64) (*mautrix.RespSendEvent, error) {
 	wrappedContent := event.Content{Parsed: content}
 	if timestamp != 0 && intent.IsCustomPuppet {
 		wrappedContent.Raw = map[string]interface{}{
@@ -1344,7 +1410,7 @@ func (portal *Portal) sendMessage(intent *appservice.IntentAPI, eventType event.
 	if portal.Encrypted && portal.bridge.Crypto != nil {
 		encrypted, err := portal.bridge.Crypto.Encrypt(portal.MXID, eventType, wrappedContent)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to encrypt event")
+			return nil, fmt.Errorf("failed to encrypt event: %w", err)
 		}
 		eventType = event.EventEncrypted
 		wrappedContent.Parsed = encrypted
@@ -1608,6 +1674,18 @@ type mediaMessage struct {
 	sendAsSticker bool
 }
 
+func (portal *Portal) uploadWithRetry(intent *appservice.IntentAPI, data []byte, mimeType string, retries int) (*mautrix.RespMediaUpload, error) {
+	for ;;retries-- {
+		uploaded, err := intent.UploadBytes(data, mimeType)
+		if isGatewayError(err) {
+			portal.log.Warnfln("Got gateway error trying to upload media, retrying in %d seconds", int(BadGatewaySleep.Seconds()))
+			time.Sleep(BadGatewaySleep)
+		} else {
+			return uploaded, err
+		}
+	}
+}
+
 func (portal *Portal) HandleMediaMessage(source *User, msg mediaMessage) {
 	intent, endHandlePrivateChatFromMe := portal.startHandling(source, msg.info)
 	if endHandlePrivateChatFromMe != nil {
@@ -1622,7 +1700,7 @@ func (portal *Portal) HandleMediaMessage(source *User, msg mediaMessage) {
 		portal.log.Warnfln("Failed to download media for %s: %v. Calling LoadMediaInfo and retrying download...", msg.info.Id, err)
 		_, err = source.Conn.LoadMediaInfo(msg.info.RemoteJid, msg.info.Id, msg.info.FromMe)
 		if err != nil {
-			portal.sendMediaBridgeFailure(source, intent, msg.info, errors.Wrap(err, "failed to load media info"))
+			portal.sendMediaBridgeFailure(source, intent, msg.info, fmt.Errorf("failed to load media info: %w", err))
 			return
 		}
 		data, err = msg.download()
@@ -1635,24 +1713,6 @@ func (portal *Portal) HandleMediaMessage(source *User, msg mediaMessage) {
 		return
 	}
 
-	// synapse doesn't handle webp well, so we convert it. This can be dropped once https://github.com/matrix-org/synapse/issues/4382 is fixed
-	if msg.mimeType == "image/webp" {
-		img, err := decodeWebp(bytes.NewReader(data))
-		if err != nil {
-			portal.sendMediaBridgeFailure(source, intent, msg.info, errors.Wrap(err, "failed to decode webp"))
-			return
-		}
-
-		var buf bytes.Buffer
-		err = png.Encode(&buf, img)
-		if err != nil {
-			portal.sendMediaBridgeFailure(source, intent, msg.info, errors.Wrap(err, "failed to convert to png"))
-			return
-		}
-		data = buf.Bytes()
-		msg.mimeType = "image/png"
-	}
-
 	var width, height int
 	if strings.HasPrefix(msg.mimeType, "image/") {
 		cfg, _, _ := image.DecodeConfig(bytes.NewReader(data))
@@ -1661,19 +1721,26 @@ func (portal *Portal) HandleMediaMessage(source *User, msg mediaMessage) {
 
 	data, uploadMimeType, file := portal.encryptFile(data, msg.mimeType)
 
-	uploaded, err := intent.UploadBytes(data, uploadMimeType)
+	uploaded, err := portal.uploadWithRetry(intent, data, uploadMimeType, MediaUploadRetries)
 	if err != nil {
-		httpErr := err.(mautrix.HTTPError)
-		if httpErr.Code == 413 {
-			portal.sendMediaBridgeFailure(source, intent, msg.info, errors.New("server rejected too large file"))
+		if errors.Is(err, mautrix.MTooLarge) {
+			portal.sendMediaBridgeFailure(source, intent, msg.info, errors.New("homeserver rejected too large file"))
+		} else if httpErr := err.(mautrix.HTTPError); httpErr.IsStatus(413) {
+			portal.sendMediaBridgeFailure(source, intent, msg.info, errors.New("proxy rejected too large file"))
 		} else {
-			portal.sendMediaBridgeFailure(source, intent, msg.info, errors.Wrap(err, "failed to upload media"))
+			portal.sendMediaBridgeFailure(source, intent, msg.info, fmt.Errorf("failed to upload media: %w", err))
 		}
 		return
 	}
 
 	if msg.fileName == "" {
-		msg.fileName = msg.info.Id
+		mimeClass := strings.Split(msg.mimeType, "/")[0]
+		switch mimeClass {
+		case "application":
+			msg.fileName = "file"
+		default:
+			msg.fileName = mimeClass
+		}
 
 		exts, _ := mime.ExtensionsByType(msg.mimeType)
 		if exts != nil && len(exts) > 0 {
@@ -1811,18 +1878,18 @@ func (portal *Portal) downloadThumbnail(content *event.MessageEventContent, id i
 func (portal *Portal) convertGifToVideo(gif []byte) ([]byte, error) {
 	dir, err := ioutil.TempDir("", "gif-convert-*")
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to make temp dir")
+		return nil, fmt.Errorf("failed to make temp dir: %w", err)
 	}
 	defer os.RemoveAll(dir)
 
 	inputFile, err := os.OpenFile(filepath.Join(dir, "input.gif"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed open input file")
+		return nil, fmt.Errorf("failed open input file: %w", err)
 	}
 	_, err = inputFile.Write(gif)
 	if err != nil {
 		_ = inputFile.Close()
-		return nil, errors.Wrap(err, "failed to write gif to input file")
+		return nil, fmt.Errorf("failed to write gif to input file: %w", err)
 	}
 	_ = inputFile.Close()
 
@@ -1838,11 +1905,11 @@ func (portal *Portal) convertGifToVideo(gif []byte) ([]byte, error) {
 
 	err = cmd.Run()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to run ffmpeg")
+		return nil, fmt.Errorf("failed to run ffmpeg: %w", err)
 	}
 	outputFile, err := os.OpenFile(filepath.Join(dir, "output.mp4"), os.O_RDONLY, 0)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to open output file")
+		return nil, fmt.Errorf("failed to open output file: %w", err)
 	}
 	defer func() {
 		_ = outputFile.Close()
@@ -1850,7 +1917,7 @@ func (portal *Portal) convertGifToVideo(gif []byte) ([]byte, error) {
 	}()
 	mp4, err := ioutil.ReadAll(outputFile)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to read mp4 from output file")
+		return nil, fmt.Errorf("failed to read mp4 from output file: %w", err)
 	}
 	return mp4, nil
 }
@@ -2096,6 +2163,7 @@ func (portal *Portal) convertMatrixMessage(sender *User, evt *event.Event) (*waP
 		info.Message.DocumentMessage = &waProto.DocumentMessage{
 			ContextInfo:   ctxInfo,
 			Url:           &media.URL,
+			Title:         &content.Body,
 			FileName:      &content.Body,
 			MediaKey:      media.MediaKey,
 			Mimetype:      &content.GetInfo().MimeType,
@@ -2121,10 +2189,10 @@ func (portal *Portal) wasMessageSent(sender *User, id string) bool {
 	return true
 }
 
-func (portal *Portal) sendErrorMessage(sendErr error) id.EventID {
+func (portal *Portal) sendErrorMessage(message string) id.EventID {
 	resp, err := portal.sendMainIntentMessage(event.MessageEventContent{
 		MsgType: event.MsgNotice,
-		Body:    fmt.Sprintf("\u26a0 Your message may not have been bridged: %v", sendErr),
+		Body:    fmt.Sprintf("\u26a0 Your message may not have been bridged: %v", message),
 	})
 	if err != nil {
 		portal.log.Warnfln("Failed to send bridging error message:", err)
@@ -2156,8 +2224,11 @@ func (portal *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 		return
 	}
 	portal.markHandled(sender, info, evt.ID)
-	portal.log.Debugln("Sending event", evt.ID, "to WhatsApp")
+	portal.log.Debugln("Sending event", evt.ID, "to WhatsApp", info.Key.GetId())
+	portal.sendRaw(sender, evt, info, false)
+}
 
+func (portal *Portal) sendRaw(sender *User, evt *event.Event, info *waProto.WebMessageInfo, isRetry bool) {
 	errChan := make(chan error, 1)
 	go sender.Conn.SendRaw(info, errChan)
 
@@ -2165,19 +2236,30 @@ func (portal *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 	var errorEventID id.EventID
 	select {
 	case err = <-errChan:
+		var statusResp whatsapp.StatusResponse
+		if !isRetry && errors.As(err, &statusResp) && statusResp.Status == 599 {
+			portal.log.Debugfln("599 status response sending %s to WhatsApp (%+v), retrying...", evt.ID, statusResp)
+			errorEventID = portal.sendErrorMessage(fmt.Sprintf("%v. The bridge will retry in 5 seconds.", err))
+			time.Sleep(5 * time.Second)
+			portal.sendRaw(sender, evt, info, true)
+		}
 	case <-time.After(time.Duration(portal.bridge.Config.Bridge.ConnectionTimeout) * time.Second):
 		if portal.bridge.Config.Bridge.FetchMessageOnTimeout && portal.wasMessageSent(sender, info.Key.GetId()) {
 			portal.log.Debugln("Matrix event %s was bridged, but response didn't arrive within timeout")
 			portal.sendDeliveryReceipt(evt.ID)
 		} else {
 			portal.log.Warnfln("Response when bridging Matrix event %s is taking long to arrive", evt.ID)
-			errorEventID = portal.sendErrorMessage(timeout)
+			errorEventID = portal.sendErrorMessage(timeout.Error())
 		}
 		err = <-errChan
 	}
 	if err != nil {
 		portal.log.Errorfln("Error handling Matrix event %s: %v", evt.ID, err)
-		portal.sendErrorMessage(err)
+		var statusResp whatsapp.StatusResponse
+		if errors.As(err, &statusResp) && statusResp.Status == 599 {
+			portal.log.Debugfln("599 status response data: %+v", statusResp)
+		}
+		portal.sendErrorMessage(err.Error())
 	} else {
 		portal.log.Debugfln("Handled Matrix event %s", evt.ID)
 		portal.sendDeliveryReceipt(evt.ID)
@@ -2254,7 +2336,7 @@ func (portal *Portal) Delete() {
 func (portal *Portal) GetMatrixUsers() ([]id.UserID, error) {
 	members, err := portal.MainIntent().JoinedMembers(portal.MXID)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get member list")
+		return nil, fmt.Errorf("failed to get member list: %w", err)
 	}
 	var users []id.UserID
 	for userID := range members.Joined {
@@ -2297,7 +2379,7 @@ func (portal *Portal) Cleanup(puppetsOnly bool) {
 		portal.log.Errorln("Failed to get portal members for cleanup:", err)
 		return
 	}
-	for member, _ := range members.Joined {
+	for member := range members.Joined {
 		if member == intent.UserID {
 			continue
 		}

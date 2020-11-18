@@ -20,9 +20,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha512"
 	"encoding/hex"
+	"errors"
 	"time"
-
-	"github.com/pkg/errors"
 
 	"github.com/Rhymen/go-whatsapp"
 
@@ -65,6 +64,7 @@ func (puppet *Puppet) SwitchCustomMXID(accessToken string, mxid id.UserID) error
 }
 
 func (puppet *Puppet) loginWithSharedSecret(mxid id.UserID) (string, error) {
+	puppet.log.Debugfln("Logging into %s with shared secret", mxid)
 	mac := hmac.New(sha512.New, []byte(puppet.bridge.Config.Bridge.LoginSharedSecret))
 	mac.Write([]byte(mxid))
 	resp, err := puppet.bridge.AS.BotClient().Login(&mautrix.ReqLogin{
