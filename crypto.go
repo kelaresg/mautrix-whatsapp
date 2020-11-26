@@ -114,7 +114,7 @@ func (helper *CryptoHelper) allowKeyShare(device *crypto.DeviceIdentity, info ev
 	}
 }
 
-func (helper *CryptoHelper) loginBotNew() (*mautrix.Client, error) {
+func (helper *CryptoHelper) loginBot() (*mautrix.Client, error) {
 	deviceID := helper.store.FindDeviceID()
 	if len(deviceID) > 0 {
 		helper.log.Debugln("Found existing device ID for bot in database:", deviceID)
@@ -152,7 +152,7 @@ func (helper *CryptoHelper) loginBotNew() (*mautrix.Client, error) {
 	return client, nil
 }
 
-func (helper *CryptoHelper) loginBot() (*mautrix.Client, error) {
+func (helper *CryptoHelper) loginBotOld() (*mautrix.Client, error) {
 	deviceID := helper.store.FindDeviceID()
 	if len(deviceID) > 0 {
 		helper.log.Debugln("Found existing device ID for bot in database:", deviceID)
