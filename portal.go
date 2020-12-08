@@ -330,30 +330,7 @@ func (portal *Portal) getMessageIntent(user *User, info whatsapp.MessageInfo) *a
 	return portal.bridge.GetPuppetByJID(info.SenderJid).IntentFor(portal)
 }
 
-func (portal *Portal) handlePrivateChatFromMe(fromMe bool) func() {
-	if portal.IsPrivateChat() && fromMe {
-		var privateChatPuppet *Puppet
-		var privateChatPuppetInvited bool
-		privateChatPuppet = portal.bridge.GetPuppetByJID(portal.Key.Receiver)
-		if privateChatPuppetInvited {
-			return nil
-		}
-		privateChatPuppetInvited = true
-		_, _ = portal.MainIntent().InviteUser(portal.MXID, &mautrix.ReqInviteUser{UserID: privateChatPuppet.MXID})
-		_ = privateChatPuppet.DefaultIntent().EnsureJoined(portal.MXID)
-
-		return func() {
-			if privateChatPuppet != nil && privateChatPuppetInvited {
-				// If you want to make your puppet leave the room after each bridge message
-				// in the direct message room, uncomment this line of code
-				//_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
-			}
-		}
-	}
-	return nil
-}
-
-func (portal *Portal) startHandling(source *User, info whatsapp.MessageInfo) (*appservice.IntentAPI, func()) {
+func (portal *Portal) startHandling(source *User, info whatsapp.MessageInfo) *appservice.IntentAPI {
 	// TODO these should all be trace logs
 	if portal.lastMessageTs > info.Timestamp+1 {
 		portal.log.Debugfln("Not handling %s: message is older (%d) than last bridge message (%d)", info.Id, info.Timestamp, portal.lastMessageTs)
@@ -369,9 +346,9 @@ func (portal *Portal) startHandling(source *User, info whatsapp.MessageInfo) (*a
 		} else {
 			portal.log.Debugfln("Not handling %s: sender is not known")
 		}
-		return intent, portal.handlePrivateChatFromMe(info.FromMe)
+		return intent
 	}
-	return nil, nil
+	return nil
 }
 
 func (portal *Portal) finishHandling(source *User, message *waProto.WebMessageInfo, mxid id.EventID) {
@@ -846,7 +823,7 @@ func (portal *Portal) beginBackfill() func() {
 		if privateChatPuppet != nil && privateChatPuppetInvited {
 			// If you want to make your puppet leave the room after each bridge message
 			// in the direct message room, uncomment this line of code
-			//_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
+			_, _ = privateChatPuppet.DefaultIntent().LeaveRoom(portal.MXID)
 		}
 	}
 }
@@ -1407,10 +1384,7 @@ func (portal *Portal) sendMessageDirect(intent *appservice.IntentAPI, eventType 
 }
 
 func (portal *Portal) HandleTextMessage(source *User, message whatsapp.TextMessage) {
-	intent, endHandlePrivateChatFromMe := portal.startHandling(source, message.Info)
-	if endHandlePrivateChatFromMe != nil {
-		defer endHandlePrivateChatFromMe()
-	}
+	intent := portal.startHandling(source, message.Info)
 	if intent == nil {
 		portal.log.Debugfln("HandleTextMessage nil")
 		return
@@ -1434,10 +1408,7 @@ func (portal *Portal) HandleTextMessage(source *User, message whatsapp.TextMessa
 }
 
 func (portal *Portal) HandleLocationMessage(source *User, message whatsapp.LocationMessage) {
-	intent, endHandlePrivateChatFromMe := portal.startHandling(source, message.Info)
-	if endHandlePrivateChatFromMe != nil {
-		defer endHandlePrivateChatFromMe()
-	}
+	intent := portal.startHandling(source, message.Info)
 	if intent == nil {
 		return
 	}
@@ -1496,10 +1467,7 @@ func (portal *Portal) HandleLocationMessage(source *User, message whatsapp.Locat
 }
 
 func (portal *Portal) HandleContactMessage(source *User, message whatsapp.ContactMessage) {
-	intent, endHandlePrivateChatFromMe := portal.startHandling(source, message.Info)
-	if endHandlePrivateChatFromMe != nil {
-		defer endHandlePrivateChatFromMe()
-	}
+	intent := portal.startHandling(source, message.Info)
 	if intent == nil {
 		return
 	}
@@ -1599,7 +1567,7 @@ func (portal *Portal) removeUser(isSameUser bool, kicker *appservice.IntentAPI, 
 		_, err := targetIntent.LeaveRoom(portal.MXID)
 		if err != nil {
 			portal.log.Warnfln("Failed to leave portal as %s: %v", target, err)
-			_, _ = portal.MainIntent().KickUser(portal.MXID, &mautrix.ReqKickUser{UserID: target})
+			_, _ = portal.MainIntent(). KickUser(portal.MXID, &mautrix.ReqKickUser{UserID: target})
 		}
 	}
 }
@@ -1671,10 +1639,7 @@ func (portal *Portal) uploadWithRetry(intent *appservice.IntentAPI, data []byte,
 }
 
 func (portal *Portal) HandleMediaMessage(source *User, msg mediaMessage) {
-	intent, endHandlePrivateChatFromMe := portal.startHandling(source, msg.info)
-	if endHandlePrivateChatFromMe != nil {
-		defer endHandlePrivateChatFromMe()
-	}
+	intent := portal.startHandling(source, msg.info)
 	if intent == nil {
 		return
 	}
