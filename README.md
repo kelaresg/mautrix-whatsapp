@@ -1,8 +1,10 @@
-# Matrix
+# mautrix-whatsapp
+A Matrix-WhatsApp puppeting bridge based on the [Rhymen/go-whatsapp](https://github.com/Rhymen/go-whatsapp)
+implementation of the [sigalor/whatsapp-web-reveng](https://github.com/sigalor/whatsapp-web-reveng) project.
 
-Include 
-1) Matrix server end 
-- Matrix-Skype-Go-Lib
-- Matrix-Whatsapp-Go-Lib
+### [Wiki](https://github.com/tulir/mautrix-whatsapp/wiki)
 
-2) Riot Client front-end
+### [Features & Roadmap](https://github.com/tulir/mautrix-whatsapp/blob/master/ROADMAP.md)
+
+## Discussion
+Matrix room: [#whatsapp:maunium.net](https://matrix.to/#/#whatsapp:maunium.net)
