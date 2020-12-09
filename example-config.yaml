@@ -205,6 +205,13 @@ bridge:
             # Require devices to be verified by the bridge?
             # Verification by the bridge is not yet implemented.
             require_verification: true
+        puppet_id:
+            # when set to true, the matrixid of the contact (puppet) from the bridge to the matrix will be encrypted into another string
+            default: false
+            # 8 characters
+            key: '12dsf323'
+            # Use the username_template prefix. (Warning: At present, username_template cannot be too complicated, otherwise this function may cause unknown errors)
+            username_template_prefix: 'whatsapp_'
 
     # Permissions for using the bridge.
     # Permitted values:

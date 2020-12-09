@@ -38,7 +38,7 @@ var userIDRegex *regexp.Regexp
 func (bridge *Bridge) ParsePuppetMXID(mxid id.UserID) (types.WhatsAppID, bool) {
 	if userIDRegex == nil {
 		userIDRegex = regexp.MustCompile(fmt.Sprintf("^@%s:%s$",
-			bridge.Config.Bridge.FormatUsername("([0-9]+)"),
+			bridge.Config.Bridge.FormatUsername("([0-9a-z]+)"),
 			bridge.Config.Homeserver.Domain))
 	}
 	match := userIDRegex.FindStringSubmatch(string(mxid))

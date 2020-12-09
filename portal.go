@@ -592,10 +592,10 @@ func (portal *Portal) Sync(user *User, contact whatsapp.Contact) {
 		// TODO
 		//   Here I set the current user's authority in the portal to the 99,
 		//   so that the current user has the authority to remove the previous user
-		rep, err := portal.MainIntent().SetPowerLevel(portal.MXID, user.MXID, 99)
-		if err != nil {
-			portal.log.Warnfln("SyncSkype: SetPowerLevel err: ", err, rep)
-		}
+		// rep, err := portal.MainIntent().SetPowerLevel(portal.MXID, user.MXID, 99)
+		//if err != nil {
+		//	portal.log.Warnfln("SyncSkype: SetPowerLevel err: ", err, rep)
+		//}
 
 		//preUserIds,_ :=  portal.GetMatrixUsers()
 		//for _,userId := range preUserIds {
