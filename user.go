@@ -1112,12 +1112,6 @@ func (user *User) HandleChatUpdate(cmd whatsappExt.ChatUpdate) {
 		go portal.RestrictMessageSending(cmd.Data.Announce)
 	case whatsappExt.ChatActionRestrict:
 		go portal.RestrictMetadataChanges(cmd.Data.Restrict)
-	//case whatsappExt.ChatActionAdd:
-	//	go portal.membershipAdd(user, cmd.JID)
-	//case whatsappExt.ChatActionRemove:
-	//	go portal.membershipRemove(cmd.Data.MemberAction.JIDs, cmd.Data.Action)
-	//case whatsappExt.ChatActionIntroduce:
-	//	go portal.membershipAdd(user, cmd.JID)
 	case whatsappExt.ChatActionRemove:
 		go portal.HandleWhatsAppKick(cmd.Data.SenderJID, cmd.Data.UserChange.JIDs)
 	case whatsappExt.ChatActionAdd:
