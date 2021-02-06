@@ -684,6 +684,14 @@ func (user *User) syncPuppets(contacts map[string]whatsapp.Contact) {
 	if contacts == nil {
 		contacts = user.Conn.Store.Contacts
 	}
+
+	if user.Conn != nil && user.Conn.Info != nil && len(user.Conn.Info.Wid) > 0 {
+		userJid := strings.Replace(user.Conn.Info.Wid, whatsappExt.OldUserSuffix, whatsappExt.NewUserSuffix, 1)
+		contacts[userJid] = whatsapp.Contact{
+			Name: user.Conn.Info.Pushname,
+			Jid: userJid,
+		}
+	}
 	user.log.Infoln("Syncing puppet info from contacts")
 	for jid, contact := range contacts {
 		if strings.HasSuffix(jid, whatsappExt.NewUserSuffix) {
@@ -1112,12 +1120,6 @@ func (user *User) HandleChatUpdate(cmd whatsappExt.ChatUpdate) {
 		go portal.RestrictMessageSending(cmd.Data.Announce)
 	case whatsappExt.ChatActionRestrict:
 		go portal.RestrictMetadataChanges(cmd.Data.Restrict)
-	//case whatsappExt.ChatActionAdd:
-	//	go portal.membershipAdd(user, cmd.JID)
-	//case whatsappExt.ChatActionRemove:
-	//	go portal.membershipRemove(cmd.Data.MemberAction.JIDs, cmd.Data.Action)
-	//case whatsappExt.ChatActionIntroduce:
-	//	go portal.membershipAdd(user, cmd.JID)
 	case whatsappExt.ChatActionRemove:
 		go portal.HandleWhatsAppKick(cmd.Data.SenderJID, cmd.Data.UserChange.JIDs)
 	case whatsappExt.ChatActionAdd:
