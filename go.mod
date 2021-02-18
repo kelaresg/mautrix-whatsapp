@@ -17,4 +17,5 @@ require (
 )
 
 replace github.com/Rhymen/go-whatsapp => github.com/tulir/go-whatsapp v0.3.21
-replace maunium.net/go/mautrix => github.com/pidongqianqian/mautrix-go v0.8.0-rc.4.0.20201209113259-22d5369b6f6f
+
+replace maunium.net/go/mautrix => github.com/pidongqianqian/mautrix-go v0.8.3-0.20210218073759-91088d028ef2
