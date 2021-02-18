@@ -50,7 +50,7 @@ func (handler *CommandHandler) CommandSpecialMux(ce *CommandEvent) {
 			handler.CommandSpecialLeaveAllPortals(ce)
 		}
 	default:
-		ce.Reply("Unknown Command")
+		ce.Reply("Unknown command, use the `help` command for help.")
 	}
 }
 
