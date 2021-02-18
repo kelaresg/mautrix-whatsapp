@@ -166,8 +166,10 @@ func (mx *MatrixHandler) handlePrivatePortal(roomID id.RoomID, inviter *User, pu
 		return
 	}
 	intent := puppet.DefaultIntent()
-	_, _ = intent.SendNotice(roomID, fmt.Sprintf("You already have a private chat portal with me at %s", roomID))
-	mx.log.Debugln("Leaving private chat room", roomID, "as", puppet.MXID, "after accepting invite from", inviter.MXID, "as we already have chat with the user")
+	errorMessage := fmt.Sprintf("You already have a private chat portal with me at [%[1]s](https://matrix.to/#/%[1]s)", portal.MXID)
+	errorContent := format.RenderMarkdown(errorMessage, true, false)
+	_, _ = intent.SendMessageEvent(roomID, event.EventMessage, errorContent)
+	mx.log.Debugfln("Leaving private chat room %s as %s after accepting invite from %s as we already have chat with the user", roomID, puppet.MXID, inviter.MXID)
 	_, _ = intent.LeaveRoom(roomID)
 }
 
@@ -184,7 +186,7 @@ func (mx *MatrixHandler) createPrivatePortalFromInvite(roomID id.RoomID, inviter
 	} else {
 		portal.Name = ""
 	}
-	portal.log.Infoln("Created private chat portal in %s after invite from", roomID, inviter.MXID)
+	portal.log.Infofln("Created private chat portal in %s after invite from %s", roomID, inviter.MXID)
 	intent := puppet.DefaultIntent()
 
 	if mx.bridge.Config.Bridge.Encryption.Default {
@@ -299,6 +301,10 @@ func (mx *MatrixHandler) HandleMembership(evt *event.Event) {
 
 func (mx *MatrixHandler) HandleRoomMetadata(evt *event.Event) {
 	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
+	if mx.shouldIgnoreEvent(evt) {
+		return
+	}
+
 	user := mx.bridge.GetUserByMXID(evt.Sender)
 	if user == nil || !user.Whitelisted || !user.IsConnected() {
 		return
@@ -309,22 +315,7 @@ func (mx *MatrixHandler) HandleRoomMetadata(evt *event.Event) {
 		return
 	}
 
-	var resp <-chan string
-	var err error
-	switch content := evt.Content.Parsed.(type) {
-	case *event.RoomNameEventContent:
-		resp, err = user.Conn.UpdateGroupSubject(content.Name, portal.Key.JID)
-	case *event.TopicEventContent:
-		resp, err = user.Conn.UpdateGroupDescription(portal.Key.JID, content.Topic)
-	case *event.RoomAvatarEventContent:
-		return
-	}
-	if err != nil {
-		mx.log.Errorln(err)
-	} else {
-		out := <-resp
-		mx.log.Infoln(out)
-	}
+	portal.HandleMatrixMeta(user, evt)
 }
 
 func (mx *MatrixHandler) shouldIgnoreEvent(evt *event.Event) bool {
