@@ -1169,14 +1169,14 @@ func (user *User) HandleChatUpdate(cmd whatsappExt.ChatUpdate) {
 
 			if cmd.Data.Action == whatsappExt.ChatActionCreate {
 				go func() {
-					data := database.PortalKeyWithMeta {
+					key := database.PortalKeyWithMeta {
 						PortalKey: database.PortalKey {
 							JID: cmd.JID,
 							Receiver: cmd.JID,
 						},
 						InCommunity: false,
 					}
-					user.InsertPortalKey(data)
+					_ = user.InsertPortalKey(key)
 				}()
 			}
 		}
