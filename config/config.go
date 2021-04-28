@@ -128,6 +128,7 @@ func (config *Config) MakeAppService() (*appservice.AppService, error) {
 	patch.AsBotName = config.AppService.Bot.Username
 	patch.AsUserPrefix = config.Bridge.Encryption.PuppetId.UsernameTemplatePrefix
 	patch.XorKey = config.Bridge.Encryption.PuppetId.Key
+	as.DefaultHTTPRetries = 4
 	var err error
 	as.Registration, err = config.GetRegistration()
 	return as, err

@@ -89,6 +89,8 @@ func (puppet *Puppet) newCustomIntent() (*appservice.IntentAPI, error) {
 		return nil, err
 	}
 	client.Logger = puppet.bridge.AS.Log.Sub(string(puppet.CustomMXID))
+	client.Client = puppet.bridge.AS.HTTPClient
+	client.DefaultHTTPRetries = puppet.bridge.AS.DefaultHTTPRetries
 	client.Syncer = puppet
 	client.Store = puppet
 
@@ -164,7 +166,7 @@ func (puppet *Puppet) ProcessResponse(resp *mautrix.RespSync, _ string) error {
 	}
 	for roomID, events := range resp.Rooms.Join {
 		portal := puppet.bridge.GetPortalByMXID(roomID)
-		if portal == nil {
+		if portal == nil || portal.IsBroadcastList() {
 			continue
 		}
 		for _, evt := range events.Ephemeral.Events {

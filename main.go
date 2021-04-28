@@ -25,6 +25,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Rhymen/go-whatsapp"
+
 	flag "maunium.net/go/mauflag"
 	log "maunium.net/go/maulogger/v2"
 
@@ -36,7 +38,6 @@ import (
 	"maunium.net/go/mautrix-whatsapp/config"
 	"maunium.net/go/mautrix-whatsapp/database"
 	"maunium.net/go/mautrix-whatsapp/database/upgrades"
-	"maunium.net/go/mautrix-whatsapp/types"
 )
 
 var (
@@ -44,7 +45,7 @@ var (
 	Name = "mautrix-whatsapp"
 	URL  = "https://github.com/tulir/mautrix-whatsapp"
 	// This is changed when making a release
-	Version = "0.1.5"
+	Version = "0.1.6"
 	// This is filled by init()
 	WAVersion = ""
 	// These are filled at build time with the -X linker flag
@@ -60,6 +61,7 @@ func init() {
 	if Tag != Version && !strings.HasSuffix(Version, "+dev") {
 		Version += "+dev"
 	}
+	mautrix.DefaultUserAgent = fmt.Sprintf("mautrix-whatsapp/%s %s", Version, mautrix.DefaultUserAgent)
 	WAVersion = strings.FieldsFunc(Version, func(r rune) bool { return r == '-' || r == '+' })[0]
 }
 
@@ -137,14 +139,14 @@ type Bridge struct {
 	Metrics        *MetricsHandler
 
 	usersByMXID         map[id.UserID]*User
-	usersByJID          map[types.WhatsAppID]*User
+	usersByJID          map[whatsapp.JID]*User
 	usersLock           sync.Mutex
 	managementRooms     map[id.RoomID]*User
 	managementRoomsLock sync.Mutex
 	portalsByMXID       map[id.RoomID]*Portal
 	portalsByJID        map[database.PortalKey]*Portal
 	portalsLock         sync.Mutex
-	puppets             map[types.WhatsAppID]*Puppet
+	puppets             map[whatsapp.JID]*Puppet
 	puppetsByCustomMXID map[id.UserID]*Puppet
 	puppetsLock         sync.Mutex
 }
@@ -163,11 +165,11 @@ type Crypto interface {
 func NewBridge() *Bridge {
 	bridge := &Bridge{
 		usersByMXID:         make(map[id.UserID]*User),
-		usersByJID:          make(map[types.WhatsAppID]*User),
+		usersByJID:          make(map[whatsapp.JID]*User),
 		managementRooms:     make(map[id.RoomID]*User),
 		portalsByMXID:       make(map[id.RoomID]*Portal),
 		portalsByJID:        make(map[database.PortalKey]*Portal),
-		puppets:             make(map[types.WhatsAppID]*Puppet),
+		puppets:             make(map[whatsapp.JID]*Puppet),
 		puppetsByCustomMXID: make(map[id.UserID]*Puppet),
 	}
 
@@ -383,11 +385,9 @@ func (bridge *Bridge) Stop() {
 			continue
 		}
 		bridge.Log.Debugln("Disconnecting", user.MXID)
-		sess, err := user.Conn.Disconnect()
+		err := user.Conn.Disconnect()
 		if err != nil {
 			bridge.Log.Errorfln("Error while disconnecting %s: %v", user.MXID, err)
-		} else {
-			user.SetSession(&sess)
 		}
 	}
 }
