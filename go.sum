@@ -224,6 +224,8 @@ github.com/pact-foundation/pact-go v1.0.4/go.mod h1:uExwJY4kCzNPcHRj+hCR/HBbOOIw
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
 github.com/pborman/uuid v1.2.0/go.mod h1:X/NO0urCmaxf9VXbdlT7C2Yzkj2IKimNn4k+gtPdI/k=
 github.com/performancecopilot/speed v3.0.0+incompatible/go.mod h1:/CLtqpZ5gBg1M9iaPbIdPPGyKcA8hKdoy6hAWba7Yac=
+github.com/pidongqianqian/go-whatsapp v0.4.6-0.20210429085121-f27237dc7eec h1:/gCCyvuYS257+PW//7keslHcSBKpfr0uwBjJDzbyqsY=
+github.com/pidongqianqian/go-whatsapp v0.4.6-0.20210429085121-f27237dc7eec/go.mod h1:rwwuTh1bKqhgrRvOBAr8hDqtuz8Cc1Quqw/0BeXb+/E=
 github.com/pidongqianqian/mautrix-go v0.8.0-rc.4.0.20201209113259-22d5369b6f6f h1:5/el2J0iG7wVDDeNC1AfclXCU4EOWI2lQTKH9KcEPvQ=
 github.com/pidongqianqian/mautrix-go v0.8.0-rc.4.0.20201209113259-22d5369b6f6f/go.mod h1:TtVePxoEaw6+RZDKVajw66Yaj1lqLjH8l4FF3krsqWY=
 github.com/pidongqianqian/mautrix-go v0.8.3-0.20210218064047-184c2e01b70c h1:677kA6HSUzV43I0T6YyWGfSBtslF39cC9lSzFQp32fA=

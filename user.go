@@ -436,6 +436,7 @@ func (user *User) Login(ce *CommandEvent) {
 	user.JID = strings.Replace(jid, whatsapp.OldUserSuffix, whatsapp.NewUserSuffix, 1)
 	user.addToJIDMap()
 	user.SetSession(&session)
+	user.pushName = user.Conn.PushName
 	ce.Reply("Successfully logged in as @" + user.pushName)
 	user.PostLogin()
 }
