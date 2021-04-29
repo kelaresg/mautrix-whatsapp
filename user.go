@@ -523,6 +523,9 @@ func (user *User) postConnPing() bool {
 	user.log.Debugln("Making post-connection ping")
 	var err error
 	for i := 0; ; i++ {
+		if user.Conn == nil {
+			return false
+		}
 		err = user.Conn.AdminTest()
 		if err == nil {
 			user.log.Debugln("Post-connection ping OK")
@@ -950,6 +953,9 @@ func (user *User) updateLastConnectionIfNecessary() {
 func (user *User) HandleError(err error) {
 	if !errors.Is(err, whatsapp.ErrInvalidWsData) {
 		user.log.Errorfln("WhatsApp error: %v", err)
+	}
+	if user.Conn == nil || !user.Conn.IsConnected() {
+		return
 	}
 	if closed, ok := err.(*whatsapp.ErrConnectionClosed); ok {
 		user.bridge.Metrics.TrackDisconnection(user.MXID)
