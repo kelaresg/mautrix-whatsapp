@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"maunium.net/go/mautrix/patch"
 	"sort"
 	"strconv"
 	"strings"
@@ -591,7 +592,13 @@ func (handler *CommandHandler) CommandPing(ce *CommandEvent) {
 			ce.Reply("Connection not OK: %v", err)
 		}
 	} else {
-		ce.Reply("You're logged in as @" + ce.User.pushName)
+		orgId := ""
+		if patch.ThirdPartyIdEncrypt {
+			orgId = patch.Enc(strings.TrimSuffix(ce.User.JID, whatsapp.NewUserSuffix))
+		} else {
+			orgId = strings.TrimSuffix(ce.User.JID, whatsapp.NewUserSuffix)
+		}
+		ce.Reply("You're logged in as @" + ce.User.pushName + ", orgid is " + orgId)
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maunium.net/go/mautrix/patch"
 	"net/http"
 	"sort"
 	"strings"
@@ -409,7 +410,13 @@ func (user *User) Login(ce *CommandEvent) {
 			MsgType: event.MsgText,
 		}
 		if err == whatsapp.ErrAlreadyLoggedIn {
-			reply.Body = "You're already logged in as @" + user.pushName
+			orgId := ""
+			if patch.ThirdPartyIdEncrypt {
+				orgId = patch.Enc(strings.TrimSuffix(user.JID, whatsapp.NewUserSuffix))
+			} else {
+				orgId = strings.TrimSuffix(user.JID, whatsapp.NewUserSuffix)
+			}
+			reply.Body = "You're already logged in as @" + user.pushName + ", orgid is " + orgId
 		} else if err == whatsapp.ErrLoginInProgress {
 			reply.Body = "You have a login in progress already."
 		} else if err == whatsapp.ErrLoginTimedOut {
@@ -437,7 +444,13 @@ func (user *User) Login(ce *CommandEvent) {
 	user.addToJIDMap()
 	user.SetSession(&session)
 	user.pushName = user.Conn.PushName
-	ce.Reply("Successfully logged in as @" + user.pushName)
+	orgId := ""
+	if patch.ThirdPartyIdEncrypt {
+		orgId = patch.Enc(strings.TrimSuffix(ce.User.JID, whatsapp.NewUserSuffix))
+	} else {
+		orgId = strings.TrimSuffix(ce.User.JID, whatsapp.NewUserSuffix)
+	}
+	ce.Reply("Successfully logged in as @" + user.pushName + ", orgid is " + orgId)
 	user.PostLogin()
 }
 
