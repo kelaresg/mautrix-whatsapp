@@ -36,7 +36,6 @@ type BridgeConfig struct {
 	ConnectionTimeout     int  `yaml:"connection_timeout"`
 	FetchMessageOnTimeout bool `yaml:"fetch_message_on_timeout"`
 	DeliveryReceipts      bool `yaml:"delivery_receipts"`
-	LoginQRRegenCount     int  `yaml:"login_qr_regen_count"`
 	MaxConnectionAttempts int  `yaml:"max_connection_attempts"`
 	ConnectionRetryDelay  int  `yaml:"connection_retry_delay"`
 	ReportConnectionRetry bool `yaml:"report_connection_retry"`
@@ -74,6 +73,9 @@ type BridgeConfig struct {
 	MuteBridging                  bool   `yaml:"mute_bridging"`
 	ArchiveTag                    string `yaml:"archive_tag"`
 	PinnedTag                     string `yaml:"pinned_tag"`
+	TagOnlyOnCreate               bool   `yaml:"tag_only_on_create"`
+	MarkReadOnlyOnCreate          bool   `yaml:"mark_read_only_on_create"`
+	EnableStatusBroadcast         bool   `yaml:"enable_status_broadcast"`
 
 	WhatsappThumbnail bool `yaml:"whatsapp_thumbnail"`
 
@@ -111,7 +113,6 @@ func (bc *BridgeConfig) setDefaults() {
 	bc.ConnectionTimeout = 20
 	bc.FetchMessageOnTimeout = false
 	bc.DeliveryReceipts = false
-	bc.LoginQRRegenCount = 2
 	bc.MaxConnectionAttempts = 3
 	bc.ConnectionRetryDelay = -1
 	bc.ReportConnectionRetry = true
@@ -140,6 +141,7 @@ func (bc *BridgeConfig) setDefaults() {
 	bc.InviteOwnPuppetForBackfilling = true
 	bc.PrivateChatPortalMeta = false
 	bc.BridgeNotices = true
+	bc.EnableStatusBroadcast = true
 }
 
 type umBridgeConfig BridgeConfig
