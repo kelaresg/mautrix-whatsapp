@@ -63,6 +63,7 @@ const BroadcastTopic = "WhatsApp broadcast list"
 const UnnamedBroadcastName = "Unnamed broadcast list"
 const PrivateChatTopic = "WhatsApp private chat"
 var ErrStatusBroadcastDisabled = errors.New("status bridging is disabled")
+var ErrBroadcastListDisabled = errors.New("broadcast list bridging is disabled")
 
 func (bridge *Bridge) GetPortalByMXID(mxid id.RoomID) *Portal {
 	bridge.portalsLock.Lock()
@@ -1107,6 +1108,10 @@ func (portal *Portal) CreateMatrixRoom(user *User) error {
 		portal.Name = StatusBroadcastName
 		portal.Topic = StatusBroadcastTopic
 	} else if portal.IsBroadcastList() {
+		if !portal.bridge.Config.Bridge.EnableBroadcastList {
+			portal.log.Debugln("BroadcastList bridging is disabled in config, not creating room after all")
+			return ErrBroadcastListDisabled
+		}
 		var err error
 		broadcastMetadata, err = user.Conn.GetBroadcastMetadata(portal.Key.JID)
 		if err == nil && broadcastMetadata.Status == 200 {

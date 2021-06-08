@@ -199,6 +199,9 @@ bridge:
     # Disabling this won't affect already created status broadcast rooms.
     enable_status_broadcast: true
 
+    # Whether or not WhatsApp bridge broadcast list into a Matrix room.(default is false)
+    enable_broadcast_list: false
+
     # Whether or not thumbnails from WhatsApp should be sent.
     # They're disabled by default due to very low resolution.
     whatsapp_thumbnail: false
