@@ -24,45 +24,56 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/Rhymen/go-whatsapp"
+
 	"maunium.net/go/mautrix/id"
 )
 
 type BridgeErrorCode string
 
 const (
-	WANotLoggedIn  BridgeErrorCode = "wa-not-logged-in"
-	WANotConnected BridgeErrorCode = "wa-not-connected"
-	WAConnecting   BridgeErrorCode = "wa-connecting"
-	WATimeout      BridgeErrorCode = "wa-timeout"
-	WAPingFalse    BridgeErrorCode = "wa-ping-false"
-	WAPingError    BridgeErrorCode = "wa-ping-error"
+	WANotLoggedIn   BridgeErrorCode = "logged-out"
+	WANotConnected  BridgeErrorCode = "wa-not-connected"
+	WAConnecting    BridgeErrorCode = "wa-connecting"
+	WATimeout       BridgeErrorCode = "wa-timeout"
+	WAServerTimeout BridgeErrorCode = "wa-server-timeout"
+	WAPingFalse     BridgeErrorCode = "wa-ping-false"
+	WAPingError     BridgeErrorCode = "wa-ping-error"
 )
 
 var bridgeHumanErrors = map[BridgeErrorCode]string{
-	WANotLoggedIn:  "You're not logged into WhatsApp",
-	WANotConnected: "You're not connected to WhatsApp",
-	WAConnecting:   "Trying to reconnect to WhatsApp. Please make sure WhatsApp is running on your phone and connected to the internet.",
-	WATimeout:      "WhatsApp on your phone is not responding. Please make sure it is running and connected to the internet.",
-	WAPingFalse:    "WhatsApp returned an error, reconnecting. Please make sure WhatsApp is running on your phone and connected to the internet.",
-	WAPingError:    "WhatsApp returned an unknown error",
+	WANotLoggedIn:   "You're not logged into WhatsApp",
+	WANotConnected:  "You're not connected to WhatsApp",
+	WAConnecting:    "Trying to reconnect to WhatsApp. Please make sure WhatsApp is running on your phone and connected to the internet.",
+	WATimeout:       "WhatsApp on your phone is not responding. Please make sure it is running and connected to the internet.",
+	WAServerTimeout: "The WhatsApp web servers are not responding. The bridge will try to reconnect.",
+	WAPingFalse:     "WhatsApp returned an error, reconnecting. Please make sure WhatsApp is running on your phone and connected to the internet.",
+	WAPingError:     "WhatsApp returned an unknown error",
 }
 
 type BridgeState struct {
-	OK          bool            `json:"ok"`
-	Timestamp   int64           `json:"timestamp"`
-	TTL         int             `json:"ttl"`
+	OK        bool  `json:"ok"`
+	Timestamp int64 `json:"timestamp"`
+	TTL       int   `json:"ttl"`
+
 	ErrorSource string          `json:"error_source,omitempty"`
 	Error       BridgeErrorCode `json:"error,omitempty"`
 	Message     string          `json:"message,omitempty"`
 
-	UserID id.UserID `json:"user_id"`
+	UserID     id.UserID `json:"user_id"`
+	RemoteID   string    `json:"remote_id"`
+	RemoteName string    `json:"remote_name"`
 }
 
-func (pong *BridgeState) fill() {
+func (pong *BridgeState) fill(user *User) {
+	pong.UserID = user.MXID
+	pong.RemoteID = strings.TrimSuffix(user.JID, whatsapp.NewUserSuffix)
+	pong.RemoteName = fmt.Sprintf("+%s", pong.RemoteID)
+
 	pong.Timestamp = time.Now().Unix()
 	if !pong.OK {
 		pong.TTL = 60
@@ -87,6 +98,8 @@ func (user *User) setupAdminTestHooks() {
 	user.Conn.AdminTestHook = func(err error) {
 		if errors.Is(err, whatsapp.ErrConnectionTimeout) {
 			user.sendBridgeState(BridgeState{Error: WATimeout})
+		} else if errors.Is(err, whatsapp.ErrWebsocketKeepaliveFailed) {
+			user.sendBridgeState(BridgeState{Error: WAServerTimeout})
 		} else if errors.Is(err, whatsapp.ErrPingFalse) {
 			user.sendBridgeState(BridgeState{Error: WAPingFalse})
 		} else if err == nil {
@@ -95,8 +108,12 @@ func (user *User) setupAdminTestHooks() {
 			user.sendBridgeState(BridgeState{Error: WAPingError})
 		}
 	}
-	user.Conn.CountTimeoutHook = func() {
-		user.sendBridgeState(BridgeState{Error: WATimeout})
+	user.Conn.CountTimeoutHook = func(wsKeepaliveErrorCount int) {
+		if wsKeepaliveErrorCount > 0 {
+			user.sendBridgeState(BridgeState{Error: WAServerTimeout})
+		} else {
+			user.sendBridgeState(BridgeState{Error: WATimeout})
+		}
 	}
 }
 
@@ -121,8 +138,7 @@ func (user *User) sendBridgeState(state BridgeState) {
 		return
 	}
 
-	state.UserID = user.MXID
-	state.fill()
+	state.fill(user)
 	if user.prevBridgeStatus != nil && user.prevBridgeStatus.shouldDeduplicate(&state) {
 		return
 	}
@@ -182,6 +198,8 @@ func (prov *ProvisioningAPI) BridgeStatePing(w http.ResponseWriter, r *http.Requ
 				resp.Error = WAPingFalse
 			} else if errors.Is(err, whatsapp.ErrConnectionTimeout) {
 				resp.Error = WATimeout
+			}else if errors.Is(err, whatsapp.ErrWebsocketKeepaliveFailed) {
+				resp.Error = WAServerTimeout
 			} else if err != nil {
 				resp.Error = WAPingError
 			} else {
@@ -195,8 +213,7 @@ func (prov *ProvisioningAPI) BridgeStatePing(w http.ResponseWriter, r *http.Requ
 			resp.Error = WANotConnected
 		}
 	}
-	resp.UserID = user.MXID
-	resp.fill()
+	resp.fill(user)
 	user.log.Debugfln("Responding bridge state in bridge status endpoint: %+v", resp)
 	jsonResponse(w, http.StatusOK, &resp)
 	user.prevBridgeStatus = &resp

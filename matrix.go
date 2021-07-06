@@ -60,7 +60,7 @@ func NewMatrixHandler(bridge *Bridge) *MatrixHandler {
 }
 
 func (mx *MatrixHandler) HandleEncryption(evt *event.Event) {
-	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
+	defer mx.bridge.Metrics.TrackMatrixEvent(evt.Type)()
 	if evt.Content.AsEncryption().Algorithm != id.AlgorithmMegolmV1 {
 		return
 	}
@@ -252,7 +252,7 @@ func (mx *MatrixHandler) HandleMembership(evt *event.Event) {
 	if _, isPuppet := mx.bridge.ParsePuppetMXID(evt.Sender); evt.Sender == mx.bridge.Bot.UserID || isPuppet {
 		return
 	}
-	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
+	defer mx.bridge.Metrics.TrackMatrixEvent(evt.Type)()
 
 	if mx.bridge.Crypto != nil {
 		mx.bridge.Crypto.HandleMemberEvent(evt)
@@ -304,7 +304,7 @@ func (mx *MatrixHandler) HandleMembership(evt *event.Event) {
 }
 
 func (mx *MatrixHandler) HandleRoomMetadata(evt *event.Event) {
-	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
+	defer mx.bridge.Metrics.TrackMatrixEvent(evt.Type)()
 	if mx.shouldIgnoreEvent(evt) {
 		return
 	}
@@ -340,7 +340,7 @@ func (mx *MatrixHandler) shouldIgnoreEvent(evt *event.Event) bool {
 const sessionWaitTimeout = 5 * time.Second
 
 func (mx *MatrixHandler) HandleEncrypted(evt *event.Event) {
-	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
+	defer mx.bridge.Metrics.TrackMatrixEvent(evt.Type)()
 	if mx.shouldIgnoreEvent(evt) || mx.bridge.Crypto == nil {
 		return
 	}
@@ -410,7 +410,7 @@ func (mx *MatrixHandler) waitLongerForSession(evt *event.Event) {
 }
 
 func (mx *MatrixHandler) HandleMessage(evt *event.Event) {
-	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
+	defer mx.bridge.Metrics.TrackMatrixEvent(evt.Type)()
 	if mx.shouldIgnoreEvent(evt) {
 		return
 	}
@@ -436,7 +436,7 @@ func (mx *MatrixHandler) HandleMessage(evt *event.Event) {
 }
 
 func (mx *MatrixHandler) HandleRedaction(evt *event.Event) {
-	defer mx.bridge.Metrics.TrackEvent(evt.Type)()
+	defer mx.bridge.Metrics.TrackMatrixEvent(evt.Type)()
 	if _, isPuppet := mx.bridge.ParsePuppetMXID(evt.Sender); evt.Sender == mx.bridge.Bot.UserID || isPuppet {
 		return
 	}
