@@ -2340,7 +2340,7 @@ func (portal *Portal) sendRaw(sender *User, evt *event.Event, info *waProto.WebM
 			portal.sendDeliveryReceipt(evt.ID)
 		} else {
 			portal.log.Warnfln("Response when bridging Matrix event %s is taking long to arrive", evt.ID)
-			errorEventID = portal.sendErrorMessage("message sending timed out")
+			errorEventID = portal.sendErrorMessage("message sending timed out, please confirm that WhatsApp on your mobile phone is connected to the Internet ")
 		}
 		err = <-errChan
 	}
