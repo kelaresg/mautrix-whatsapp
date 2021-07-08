@@ -444,6 +444,7 @@ func (user *User) Login(ce *CommandEvent) {
 	user.JID = strings.Replace(jid, whatsapp.OldUserSuffix, whatsapp.NewUserSuffix, 1)
 	user.addToJIDMap()
 	user.SetSession(&session)
+	user.Conn.SetSession(session)
 	user.pushName = user.Conn.PushName
 	orgId := ""
 	if patch.ThirdPartyIdEncrypt {
