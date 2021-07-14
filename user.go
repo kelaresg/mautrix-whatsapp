@@ -871,6 +871,11 @@ func (user *User) syncPortals(chatMap map[string]whatsapp.Chat, createAll bool) 
 		create := (chat.LastMessageTime >= user.LastConnection && user.LastConnection > 0) || i < limit
 		if len(chat.Portal.MXID) > 0 || create || createAll {
 			user.log.Debugfln("Syncing chat %+v", chat.Chat.Source)
+			val, ok := chat.Chat.Source["read_only"]
+			if ok {
+				chat.Portal.setReadOnly(true)
+				fmt.Println("Syncing portals 0000: ", val)
+			}
 			justCreated := len(chat.Portal.MXID) == 0
 			user.syncPortal(chat)
 			user.syncChatDoublePuppetDetails(doublePuppet, chat, justCreated)

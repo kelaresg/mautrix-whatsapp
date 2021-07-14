@@ -194,9 +194,18 @@ type Portal struct {
 	isPrivate   *bool
 	isBroadcast *bool
 	hasRelaybot *bool
+	readOnly    bool
 }
 
 const MaxMessageAgeToCreatePortal = 5 * 60 // 5 minutes
+
+func (portal *Portal) setReadOnly(val bool) {
+	portal.readOnly = val
+}
+
+func (portal *Portal) getReadOnly() bool {
+	return portal.readOnly
+}
 
 func (portal *Portal) syncDoublePuppetDetailsAfterCreate(source *User) {
 	doublePuppet := portal.bridge.GetPuppetByCustomMXID(source.MXID)
@@ -720,6 +729,13 @@ func (portal *Portal) Sync(user *User, contact whatsapp.Contact) bool {
 		//	}
 		//}
 
+	}
+	
+	if portal.getReadOnly() {
+		rep, err := portal.MainIntent().SetPowerLevel(portal.MXID, user.MXID, -1)
+		if err != nil {
+			portal.log.Warnfln("SyncWhatsapp: SetPowerLevel err: ", err, rep)
+		}
 	}
 
 	update := false
